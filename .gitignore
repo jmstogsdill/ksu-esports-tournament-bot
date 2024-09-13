@@ -1,0 +1,8 @@
+
+*.code-workspace
+*.config
+*.txt
+*.DS_Store
+*.env
+credentials.json
+token.json
