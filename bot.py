@@ -697,67 +697,7 @@ async def calculate_score_diff(team1, team2):
 
 
 
-# new contributions by jackson below
-#TODO
-# go back through old code and change any erroneous references to "discord id" that are actually referring to discord usernames
 
-
-# adds new users to the sheet and updates their username based on Discord ID
-def add_or_update_user_in_sheet(member):
-    gs = gspread.oauth()
-    range_name = 'B1:C100'  # Assuming column B is for usernames and C for Discord IDs
-    sh = gs.open(SHEETS_NAME)
-    try:
-        values = sh.sheet1.get_values(range_name)
-        # Look for the user's Discord ID in sheet
-        found = False
-        for i, row in enumerate(values, start=1):
-            if len(row) > 1 and row[1] == str(member.id):
-                # If ID found and username has changed, update it in sheet
-                if row[0] != member.name:
-                    sh.sheet1.update_cell(i, 1, member.name)
-                found = True
-                break
-        # if user isn't found add a new row in the sheet
-        if not found:
-            next_row = len(values) + 1
-            sh.sheet1.update_cell(next_row, 1, member.name)  # discord username
-            sh.sheet1.update_cell(next_row, 2, str(member.id))  # numeric discord ID
-    except HttpError as e:
-        print(f'An error occurred: {e}')
-        return e
-
-# automatically add a row for new user when they send a command to the bot OR, if they already have a row but have changed username, update the cell with their username
-@client.event
-async def on_interaction(interaction: discord.Interaction):
-    member = interaction.user
-    add_or_update_user_in_sheet
-    await client.process_application_commands(interaction)
-
-# command updates all usernames based on existing Discord IDs stored in the sheet
-@tree.command(
-    name='update_usernames',
-    description='Update all usernames in the spreadsheet based on Discord IDs.',
-    guild=discord.Object(GUILD)
-)
-
-async def update_usernames(interaction: discord.Interaction):
-    gs = gspread.oauth()
-    range_name = 'B1:C100' # Again assuming column B is for usernames and C for Discord IDs
-    sh = gs.open(SHEETS_NAME)
-    try:
-        values = sh.sheet1.get_values(range_name)
-        guild = client.get_guild(int(GUILD))
-        for i, row in enumerate(values, start=1):
-            if len(row) > 1:
-                discord_id = row[1]
-                member = guild.get_member(int(discord_id))
-                if member and row[0] != member.name:
-                    sh.sheet1.update_cell(i, 1, member.name)
-        await interaction.response.send_message('Usernames have been updated.')
-    except HttpError as e:
-        print(f'An error occurred: {e}')
-        await interaction.response.send_message('Failed to update usernames.')
 
 """
 @tree.command(
