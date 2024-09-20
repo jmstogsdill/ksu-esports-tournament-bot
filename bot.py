@@ -77,8 +77,9 @@ class Team:
               (Tier {self.jungle.tier})\nMid Laner: {self.mid_laner.username} priority: {self.mid_laner.mid_priority} (Tier {self.mid_laner.tier})\nBot Laner: {self.bot_laner.username} \
                   priority: {self.bot_laner.bot_priority} (Tier {self.bot_laner.tier})\nSupport: {self.support.username} priority: {self.support.support_priority} (Tier {self.support.tier})"
 
-#Checkin button class for checking in to tournaments.
+#Check-in button class for checking in to tournaments.
 class CheckinButtons(discord.ui.View):
+    # timeout after 900 seconds = end of 15-minute check-in period
     def __init__(self, *, timeout = 900):
         super().__init__(timeout = timeout)
     """
@@ -131,6 +132,7 @@ class CheckinButtons(discord.ui.View):
         return "Did not check in yet"
 
 class volunteerButtons(discord.ui.View):
+    # timeout after 900 seconds = end of 15-minute volunteer period
     def __init__(self, *, timeout = 900):
         super().__init__(timeout = timeout)
     """
@@ -310,20 +312,20 @@ def update_wins(interaction, winners):
 #Command to start check-in
 @tree.command(
     name = 'checkin',
-    description = 'Initiate Tournament Check-In.',
+    description = 'Initiate tournament check-in',
     guild = discord.Object(GUILD))
 async def checkin(interaction):
     view = CheckinButtons()
-    await interaction.response.send_message('Check-In for the tournament has started! You have 15 minutes to check-in.', view = view)
+    await interaction.response.send_message('Check-in for the tournament has started! You have 15 minutes to check in.', view = view)
 
 #Command to start volunteer
 @tree.command(
     name = 'volunteer',
-    description = 'initiate check for volunteers',
+    description = 'Initiate check for volunteers',
     guild = discord.Object(GUILD))
 async def volunteer(interaction):
     view = volunteerButtons()
-    await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out', view = view)
+    await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out.', view = view)
 
 @tree.command(
         name = 'toxicity',
@@ -335,7 +337,7 @@ async def toxicity(interaction: discord.Interaction, discord_username: str):
         await asyncio.sleep(1)
         found_user = update_toxicity(interaction = interaction, discord_username = discord_username)
         if found_user:
-            await interaction.followup.send(f"{discord_username}'s toxicity point has been updated.")
+            await interaction.followup.send(f"{discord_username}'s toxicity points have been updated.")
         else:
             await interaction.followup.send(f"{discord_username} could not be found.")
     except Exception as e:
@@ -352,9 +354,9 @@ async def wins(interaction: discord.Interaction, player_1: str, player_2: str, p
         await asyncio.sleep(1)
         found_users = update_wins(interaction = interaction, winners = winners)
         if found_users:
-            await interaction.followup.send("All winner's 'win' points have been updated.")
+            await interaction.followup.send("All winners' 'win' points have been updated.")
         else:
-            await interaction.followup.send("At least one of the winner's could not be found.")
+            await interaction.followup.send("At least one of the winners could not be found.")
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -465,7 +467,7 @@ async def points(interaction: discord.Interaction):
 
 @tree.command(
     name = 'matchmake',
-    description = "Form teams for all players enrolled in the game.",
+    description = "Form teams for all players enrolled in the game",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: str):
     try:
