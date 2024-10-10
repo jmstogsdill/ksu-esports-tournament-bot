@@ -27,6 +27,22 @@ SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .en
 SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 
+-----------
+{
+    "riotGames": {
+    "lolApiKey": "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744", 
+    "rank": ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER", "EMERALD"], 
+    "tier": [1, 2, 3, 4, 5, 6, 7]
+    }
+},
+"discord": {
+    discordID": "<<1278960443653623818>>", 
+    #"clientSecret": "<<aSrS7YCrCsQmUpRbtLLlDXpF71J0DmC2>>", //IS THIS NEEDED? 
+    "OWNER": "<<452664152343707655>>", 
+    "token": "<<MTI3ODk2MDQ0MzY1MzYyMzgxOA.Giu-dm.MWs00Unu751IJFJ9qJ-asre9iR2-bJnnhtNAj0>>", 
+}
+----------
+
 @client.event
 async def on_ready():
     await tree.sync(guild=discord.Object(GUILD))
