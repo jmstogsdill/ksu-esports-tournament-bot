@@ -57,6 +57,22 @@ class GatewayEventFilter(logging.Filter):
             return False
         return True"""
 
+def get_preference_weight(tier):
+    tier_weights = {
+"IRON": 1,
+"BRONZE": 2,
+"SILVER": 3,
+"GOLD": 4,
+"PLATINUM": 5,
+"DIAMOND": 6,
+"MASTER": 7,
+"GRANDMASTER": 8,
+"CHALLENGER": 9,
+"EMERALD": 10
+    }
+
+return tier_weights.get(tier.upper(), 0)
+
 #Player class.
 class Player:
     def __init__(self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
@@ -68,9 +84,10 @@ class Player:
         self.mid_priority = mid_priority
         self.bot_priority = bot_priority
         self.support_priority = support_priority
+        self.weight = get_preference_weight(tier)
 
     def __str__(self):
-        return f"Player: {self.username} (Tier {self.tier}), Top: {self.top_priority}, Jungle: {self.jungle_priority}, Mid: {self.mid_priority}, Bot: {self.bot_priority}, Support: {self.support_priority}"
+        return f"Player: {self.username} (Tier {self.tier}), Weight: {self.weight}), Top: {self.top_priority}, Jungle: {self.jungle_priority}, Mid: {self.mid_priority}, Bot: {self.bot_priority}, Support: {self.support_priority}"
 
     def set_roles(self, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
         self.top_priority = top_priority
