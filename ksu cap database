@@ -1,0 +1,32 @@
+CREATE TABLE  Staging_PlayerStats (
+    Player TEXT,
+    DiscordID TEXT,
+    Participation INTEGER,
+    Wins INTEGER,
+    MVPs INTEGER,
+    Toxicity INTEGER,
+    GamesPlayed INTEGER,
+    WR_Pct DECIMAL(5, 2),
+    PointTotal INTEGER,
+    IncreasePart INTEGER,
+    IncreaseWin INTEGER,
+    IncreaseMVP INTEGER,
+    AddMinus1ToToxic INTEGER,
+    Notes TEXT
+);
+select * from Staging_PlayerStats
+
+CREATE TABLE  PlayerTiers (
+    Player TEXT,
+    Rank TEXT,
+    RolesPref TEXT,
+    Tier INTEGER,
+    AdditionalRole1 TEXT,
+    AdditionalRole2 TEXT,
+    SortRank REAL,
+    RankAlt TEXT,
+    RolesPrefAlt TEXT,
+    TierAlt INTEGER
+); 
+
+select * from PlayerTiers
