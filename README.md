@@ -66,6 +66,8 @@ If any of the folders mentioned above don’t already exist, you will need to cr
 # Installation of packages
 To finish setting up the bot, there are a few Python packages you need to have installed on your computer for it to work:
 
+aiosqlite
+
 asyncio
 
 discord
