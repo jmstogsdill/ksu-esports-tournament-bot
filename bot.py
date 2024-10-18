@@ -984,7 +984,7 @@ async def start_voting(interaction: discord.Interaction):
 @tree.command(
     name='votemvp',
     description='Vote for the MVP of your match',
-    guild=discord.Object(id=1278958727059214397)
+    guild=discord.Object(GUILD)
 )
 async def votemvp(interaction: discord.Interaction, username: str):
     global voting_in_progress, mvp_updates_today
