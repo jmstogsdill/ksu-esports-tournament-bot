@@ -739,6 +739,19 @@ async def calculate_score_diff(team1, team2):
                      (team1.jungle.tier - team2.jungle.tier) ** 2 + \
                      (team1.support.tier - team2.support.tier) ** 2
     return diff
+# Synergy score based on roles
+def calculate_synergy(team):
+    if has_roles(team, ["tank", "support", "damage"]):
+        return 10  # Higher synergy score
+    else:
+        return 5  # Lower score for less balanced teams
+# Keep a history of team matchups
+def calculate_repetition_penalty(team1, team2, previous_matches):
+    penalty = 0
+    for match in previous_matches:
+        if set(team1.players) == set(match.team1.players) or set(team2.players) == set(match.team2.players):
+            penalty += 10  # Add a penalty for repetition
+    return penalty
 
 
 
