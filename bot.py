@@ -1038,7 +1038,7 @@ async def votemvp(interaction: discord.Interaction, username: str):
 @tree.command(
     name='help',
     description='Get help for bot commands',
-    guild=discord.Object(id=YOUR_GUILD_ID)
+    guild=discord.Object(GUILD)
 )
 async def help_command(interaction: discord.Interaction):
     pages = [
