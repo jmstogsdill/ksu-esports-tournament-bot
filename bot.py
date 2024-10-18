@@ -32,27 +32,26 @@ SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from t
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 
 # SQLite connection
-conn = aiosqlite.connect('ksu_esports_bot.db')
-cursor = conn.cursor()
 
 # creating db tables if they don't already exist
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS "PlayerStats" (
-        "PlayerRiotID"	TEXT UNIQUE,
-        "DiscordUsername"	TEXT NOT NULL,
-        "DiscordID"	TEXT NOT NULL UNIQUE,
-        "Participation"	NUMERIC,
-        "Wins"	INTEGER,
-        "MVPs"	INTEGER DEFAULT 0,
-        "ToxicityPoints"	NUMERIC,
-        "GamesPlayed"	NUMERIC,
-        "WinRate"	REAL,
-        "TotalPoints"	NUMERIC,
-        PRIMARY KEY("PlayerStatsID" AUTOINCREMENT)
-    )
-''')
-conn.commit()
-
+async def initialize_database():
+    async with aiosqlite.connect('ksu_esports_bot.db') as conn:
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS "PlayerStats" (
+                "PlayerRiotID"	TEXT UNIQUE,
+                "DiscordUsername"	TEXT NOT NULL,
+                "DiscordID"	TEXT NOT NULL UNIQUE,
+                "Participation"	NUMERIC,
+                "Wins"	INTEGER,
+                "MVPs"	INTEGER DEFAULT 0,
+                "ToxicityPoints"	NUMERIC,
+                "GamesPlayed"	NUMERIC,
+                "WinRate"	REAL,
+                "TotalPoints"	NUMERIC,
+                PRIMARY KEY("DiscordID")
+            )
+        ''')
+        await conn.commit()
 
 api_config = {
     "riotGames": {
@@ -70,6 +69,7 @@ api_config = {
 
 @client.event
 async def on_ready():
+    await initialize_database()
     await tree.sync(guild=discord.Object(GUILD))
     print(f'Logged in as {client.user}')
 
