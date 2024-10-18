@@ -121,7 +121,7 @@ async def link(interaction: discord.Interaction, riot_id: str):
 class RolePreferenceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=60)
-        roles = ["Top", "Jungle", "Mid", "Bot", "Support"]
+        roles = ["Top Lane", "Jungle", "Mid Lane", "Bot Lane", "Support"]
         for role in roles:
             self.add_item(RolePreferenceDropdown(role))
 
@@ -131,7 +131,7 @@ class RolePreferenceDropdown(discord.ui.Select):
             discord.SelectOption(label=str(i), value=str(i)) for i in range(1, 6)
         ]
         super().__init__(
-            placeholder=f"Select your priority for {role} (1-5)",
+            placeholder=f"Select your matchmaking priority for {role}",
             min_values=1,
             max_values=1,
             options=options,
@@ -163,7 +163,7 @@ async def rolepreference(interaction: discord.Interaction):
     view = RolePreferenceView()
     view.values = {role: 5 for role in ["Top", "Jungle", "Mid", "Bot", "Support"]}  # Default priorities; 5 should correspond to a user NEVER being matched on a team set to that role. 4 is "neutral" ie the user has no preference to it.
 
-    await interaction.response.send_message("Please select your role preferences for each role:", view=view, ephemeral=True)
+    await interaction.response.send_message("Please select your roles in order of preference, with 1 being most preferred:", view=view, ephemeral=True)
 
     # Wait for the user to interact with the dropdowns or timeout
     timed_out = await view.wait()
@@ -202,16 +202,17 @@ async def update_win_rate(discord_id):
 # preference weight for ranks in matchmaking
 def get_preference_weight(tier):
     tier_weights = {
+        "UNRANKED": 0,
         "IRON": 1,
         "BRONZE": 2,
         "SILVER": 3,
         "GOLD": 4,
         "PLATINUM": 5,
-        "DIAMOND": 6,
-        "MASTER": 7,
-        "GRANDMASTER": 8,
-        "CHALLENGER": 9,
-        "EMERALD": 10
+        "EMERALD": 6,
+        "DIAMOND": 7,
+        "MASTER": 8,
+        "GRANDMASTER": 9,
+        "CHALLENGER": 10
     }
     return tier_weights.get(tier.upper(), 0)
 #Player class.
