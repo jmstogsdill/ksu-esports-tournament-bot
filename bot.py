@@ -4,6 +4,7 @@ import os
 import itertools
 import gspread
 import logging
+import random
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -109,6 +110,15 @@ class Team:
         return f"Top Laner: {self.top_laner.username} priority: {self.top_laner.top_priority} (Tier {self.top_laner.tier})\nJungle: {self.jungle.username} priority:{self.jungle.jungle_priority} \
               (Tier {self.jungle.tier})\nMid Laner: {self.mid_laner.username} priority: {self.mid_laner.mid_priority} (Tier {self.mid_laner.tier})\nBot Laner: {self.bot_laner.username} \
                   priority: {self.bot_laner.bot_priority} (Tier {self.bot_laner.tier})\nSupport: {self.support.username} priority: {self.support.support_priority} (Tier {self.support.tier})"
+
+
+def randomize_teams(players):
+    random.shuffle(players)
+    teams = []
+    for i in range(0, len(players), 5):
+    if i + 5 <= len(players):
+    team = Team(players[i], players[i+1], players[i+2], players[i+3], players[i+4])
+    return teams
 
 #Check-in button class for checking in to tournaments.
 class CheckinButtons(discord.ui.View):
