@@ -739,6 +739,15 @@ async def calculate_score_diff(team1, team2):
                      (team1.jungle.tier - team2.jungle.tier) ** 2 + \
                      (team1.support.tier - team2.support.tier) ** 2
     return diff
+def get_roles(role_string):
+    role_priorities = {'top': 5, 'jungle': 5, 'mid': 5, 'bot': 5, 'support': 5}
+    if role_string == 'fill':
+        return {role: 1 for role in role_priorities}
+    roles = role_string.split('/')
+    for index, role in enumerate(roles, start=1):
+        if role.lower() in role_priorities:
+            role_priorities[role.lower()] = index
+    return role_priorities
 # Synergy score based on roles
 def calculate_synergy(team):
     if has_roles(team, ["tank", "support", "damage"]):
