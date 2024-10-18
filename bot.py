@@ -1,5 +1,8 @@
+import aiosqlite # Using this package instead of sqlite for asynchronous processing support
 import asyncio
+from collections import defaultdict
 import discord
+from discord.ext import commands, tasks
 import os
 import itertools
 import gspread
@@ -28,21 +31,42 @@ SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .en
 SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 
------------
-{
+# SQLite connection
+conn = aiosqlite.connect('ksu_esports_bot.db')
+cursor = conn.cursor()
+
+# creating db tables if they don't already exist
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS "PlayerStats" (
+        "PlayerRiotID"	TEXT UNIQUE,
+        "DiscordUsername"	TEXT NOT NULL,
+        "DiscordID"	TEXT NOT NULL UNIQUE,
+        "Participation"	NUMERIC,
+        "Wins"	INTEGER,
+        "MVPs"	INTEGER DEFAULT 0,
+        "ToxicityPoints"	NUMERIC,
+        "GamesPlayed"	NUMERIC,
+        "WinRate"	REAL,
+        "TotalPoints"	NUMERIC,
+        PRIMARY KEY("PlayerStatsID" AUTOINCREMENT)
+    )
+''')
+conn.commit()
+
+
+api_config = {
     "riotGames": {
-    "lolApiKey": "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744", 
-    "rank": ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER", "EMERALD"], 
-    "tier": [1, 2, 3, 4, 5, 6, 7]
+        "lolApiKey": "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744",
+        "rank": ["Unranked", "Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"],
+        "tier": [1, 2, 3, 4, 5, 6, 7]
+    },
+    "discord": {
+        "discordID": "1278960443653623818",
+        # "clientSecret": "aSrS7YCrCsQmUpRbtLLlDXpF71J0DmC2",  # Is this needed?
+        "OWNER": "452664152343707655",
+        "token": "MTI3ODk2MDQ0MzY1MzYyMzgxOA.Giu-dm.MWs00Unu751IJFJ9qJ-asre9iR2-bJnnhtNAj0"
     }
-},
-"discord": {
-    discordID": "<<1278960443653623818>>", 
-    #"clientSecret": "<<aSrS7YCrCsQmUpRbtLLlDXpF71J0DmC2>>", //IS THIS NEEDED? 
-    "OWNER": "<<452664152343707655>>", 
-    "token": "<<MTI3ODk2MDQ0MzY1MzYyMzgxOA.Giu-dm.MWs00Unu751IJFJ9qJ-asre9iR2-bJnnhtNAj0>>", 
 }
-----------
 
 @client.event
 async def on_ready():
@@ -54,26 +78,129 @@ class GatewayEventFilter(logging.Filter):
     def __init__(self) -> None:
         super().__init__('discord.gateway')
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.exc_info is not None and isinstance(record.exc_info[1], discord.ConnectionClosed):
+        if record.exc_info is not None and is instance(record.exc_info[1], discord.ConnectionClosed):
             return False
         return True"""
 
+# riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
+# Dropdown menu for role preference selection
+
+# Riot ID linking command
+@tree.command(name="link", description="Link your Riot ID to your Discord account.")
+async def link(interaction: discord.Interaction, riot_id: str):
+    member = interaction.user
+
+    # Verify that the Riot ID exists using the Riot API
+    api_key = "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744"
+    headers = {"X-Riot-Token": api_key}
+    url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{riot_id}"
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        # Riot ID exists, proceed to link it
+        cursor.execute(
+            "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
+            (riot_id, str(member.id))
+        )
+        conn.commit()
+        await interaction.response.send_message(f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.", ephemeral=True)
+    else:
+        # Riot ID does not exist
+        await interaction.response.send_message(f"The Riot ID '{riot_id}' could not be found. Please double-check and try again.", ephemeral=True)
+        
+# role preference command
+class RolePreferenceView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        roles = ["Top", "Jungle", "Mid", "Bot", "Support"]
+        for role in roles:
+            self.add_item(RolePreferenceDropdown(role))
+
+class RolePreferenceDropdown(discord.ui.Select):
+    def __init__(self, role):
+        options = [
+            discord.SelectOption(label=str(i), value=str(i)) for i in range(1, 6)
+        ]
+        super().__init__(
+            placeholder=f"Select your priority for {role} (1-5)",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        self.role = role
+
+    async def callback(self, interaction: discord.Interaction):
+        view: RolePreferenceView = self.view
+        view.values[self.role] = int(self.values[0])
+        await interaction.response.defer()  # Acknowledge the interaction
+
+    async def on_timeout(self):
+        # Handles timeout for the dropdown view
+        for child in self.children:
+            child.disabled = True
+        await self.message.edit(view=self)
+
+@tree.command(name="rolepreference", description="Set your role preferences for matchmaking.")
+async def rolepreference(interaction: discord.Interaction):
+    member = interaction.user
+    if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
+        await interaction.response.send_message("You must have the Player or Volunteer role to set role preferences.", ephemeral=True)
+        return
+
+    # Create the view to display dropdowns for each role
+    view = RolePreferenceView()
+    view.values = {role: 5 for role in ["Top", "Jungle", "Mid", "Bot", "Support"]}  # Default priorities; 5 should correspond to a user NEVER being matched on a team set to that role. 4 is "neutral" ie the user has no preference to it.
+
+    await interaction.response.send_message("Please select your role preferences for each role:", view=view, ephemeral=True)
+
+    # Wait for the user to interact with the dropdowns or timeout
+    timed_out = await view.wait()
+    if not timed_out:
+        role_pref_string = ''.join(str(view.values[role]) for role in ["Top", "Jungle", "Mid", "Bot", "Support"])
+        # Update database with role preferences
+        cursor.execute(
+            "UPDATE PlayerStats SET RolePreference = ? WHERE DiscordID = ?",
+            (role_pref_string, str(member.id))
+        )
+        conn.commit()
+        await interaction.followup.send(f"Your role preferences have been saved: {role_pref_string}", ephemeral=True)
+    else:
+        await interaction.followup.send("The role preference selection timed out. Please try again.", ephemeral=True)
+
+
+# code to calculate and update winrate in database
+def update_win_rate(discord_id):
+    cursor.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (discord_id,))
+    result = cursor.fetchone()
+    if result:
+        wins, games_played = result
+        win_rate = (wins / games_played) * 100 if games_played > 0 else 0
+        cursor.execute("UPDATE PlayerStats SET WinRate = ? WHERE DiscordID = ?", (win_rate, discord_id))
+        conn.commit()
+
+
+
+
+# end of aforementioned code added by Jackson
+
+
+
+# preference weight for ranks in matchmaking
 def get_preference_weight(tier):
     tier_weights = {
-"IRON": 1,
-"BRONZE": 2,
-"SILVER": 3,
-"GOLD": 4,
-"PLATINUM": 5,
-"DIAMOND": 6,
-"MASTER": 7,
-"GRANDMASTER": 8,
-"CHALLENGER": 9,
-"EMERALD": 10
+        "IRON": 1,
+        "BRONZE": 2,
+        "SILVER": 3,
+        "GOLD": 4,
+        "PLATINUM": 5,
+        "DIAMOND": 6,
+        "MASTER": 7,
+        "GRANDMASTER": 8,
+        "CHALLENGER": 9,
+        "EMERALD": 10
     }
-
-return tier_weights.get(tier.upper(), 0)
-
+    return tier_weights.get(tier.upper(), 0)
 #Player class.
 class Player:
     def __init__(self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
@@ -111,13 +238,12 @@ class Team:
               (Tier {self.jungle.tier})\nMid Laner: {self.mid_laner.username} priority: {self.mid_laner.mid_priority} (Tier {self.mid_laner.tier})\nBot Laner: {self.bot_laner.username} \
                   priority: {self.bot_laner.bot_priority} (Tier {self.bot_laner.tier})\nSupport: {self.support.username} priority: {self.support.support_priority} (Tier {self.support.tier})"
 
-
 def randomize_teams(players):
     random.shuffle(players)
     teams = []
     for i in range(0, len(players), 5):
-    if i + 5 <= len(players):
-    team = Team(players[i], players[i+1], players[i+2], players[i+3], players[i+4])
+        if i + 5 <= len(players):
+            team = Team(players[i], players[i+1], players[i+2], players[i+3], players[i+4])
     return teams
 
 #Check-in button class for checking in to tournaments.
@@ -323,34 +449,17 @@ def check_player(interaction, discord_username):
         (f'An error occured: {e}')
         return e
     
-def update_wins(interaction, winners):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    try:
-        wins = []
-        for str in winners:
-            wins.append(str.lower())
-
-        values = sh.sheet1.get_values(range_name)
-        found_users = 0
-
-        for i, row in enumerate(values, start = 1):
-            for w in wins:
-                if w == row[0].lower():
-                    found_users += 1
-        if found_users == 5:
-            for i, row in enumerate(values, start = 1):
-                for w in wins:
-                    if w == row[0].lower():
-                        user_win = int(row[3])
-                        sh.sheet1.update_cell(i, 4, user_win + 1)
-            return True
-        else:
-            return False 
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
+def update_wins(winners):
+    found_users = 0
+    for winner in winners:
+        cursor.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ?", (winner.lower(),))
+        result = cursor.fetchone()
+        if result:
+            found_users += 1
+            cursor.execute("UPDATE PlayerStats SET Wins = Wins + 1, GamesPlayed = GamesPlayed + 1 WHERE DiscordUsername = ?", (winner.lower(),))
+            update_win_rate(result[0])  # Assuming DiscordID is the 1st column in the table
+    conn.commit()
+    return found_users == len(winners)
 
 #Command to start check-in
 @tree.command(
@@ -393,7 +502,7 @@ async def toxicity(interaction: discord.Interaction, discord_username: str):
 async def wins(interaction: discord.Interaction, player_1: str, player_2: str, player_3: str, player_4: str, player_5: str):
     try:
         winners = [player_1, player_2, player_3, player_4, player_5]
-        await interaction.response.defer(ephemeral = True)
+        await interaction.response.defer(ephemeral=True)
         await asyncio.sleep(1)
         found_users = update_wins(interaction = interaction, winners = winners)
         if found_users:
@@ -401,8 +510,9 @@ async def wins(interaction: discord.Interaction, player_1: str, player_2: str, p
         else:
             await interaction.followup.send("At least one of the winners could not be found.")
     except Exception as e:
-        print(f'An error occured: {e}')
-
+        print(f'An error occurred: {e}')
+        await interaction.followup.send("An error occurred while updating the wins.")
+        
 #Slash command to remove all users from the Player and Volunteer role.
 @tree.command(
     name = 'clear',
@@ -739,6 +849,7 @@ async def calculate_score_diff(team1, team2):
                      (team1.jungle.tier - team2.jungle.tier) ** 2 + \
                      (team1.support.tier - team2.support.tier) ** 2
     return diff
+
 def get_roles(role_string):
     role_priorities = {'top': 5, 'jungle': 5, 'mid': 5, 'bot': 5, 'support': 5}
     if role_string == 'fill':
@@ -762,7 +873,9 @@ def calculate_repetition_penalty(team1, team2, previous_matches):
             penalty += 10  # Add a penalty for repetition
     return penalty
 
-# Some randomization code I was messing around with
+
+
+# Below: some randomization code Daniel was messing around with
 
 # Group players by tier (or nearby tiers)
 def group_players_by_rank(players):
@@ -823,28 +936,150 @@ async def create_random_teams_within_ranks(players):
             pass
     
     return best_teams
+# end of Daniel's randomization code
 
 
 
+# code for MVP voting command/functions added by Jackson -- updated morning of 10/18/2024
+# Dict that tracks votes after someone initiates an MVP voting session with /votemvp
+votes = defaultdict(int)
+has_voted = set()  # Tracks players who've already voted
+voting_in_progress = False  # Checks if an MVP voting session is already running
+mvp_updates_today = 0  # Track the number of MVP updates today (max 3 per day)
 
+# Start an MVP voting period
+@tasks.loop(count=1)
+async def start_voting(interaction: discord.Interaction):
+    global voting_in_progress, mvp_updates_today
+    voting_in_progress = True
+    await interaction.response.send_message("MVP voting has started! You have 5 minutes to vote using `/votemvp [username]`.", ephemeral=True)
+    await asyncio.sleep(300)  # 5 minutes
+    
+    # Calculate MVP based on votes
+    if votes:
+        max_votes = max(votes.values())
+        mvp_candidates = [player for player, count in votes.items() if count == max_votes]
+        for mvp in mvp_candidates:
+            cursor.execute("UPDATE PlayerStats SET MVPs = MVPs + 1 WHERE DiscordUsername = ?", (mvp,))
+        conn.commit()
+        await interaction.followup.send(f"Voting is over! The MVP(s) with {max_votes} votes: {', '.join(mvp_candidates)}.")
+        mvp_updates_today += 1
+    else:
+        await interaction.followup.send("No votes were cast. No MVP this round.")
+    
+    votes.clear()
+    has_voted.clear()
+    voting_in_progress = False
 
-"""
+# /votemvp command
 @tree.command(
     name='votemvp',
-    description='Vote for the mvp of your match',
-    guild = discord.Object(GUILD))
-async def voteMVP(interaction: discord.Interaction, player: str):
-    await interaction.response.defer(ephemeral=True)
-    asyncio.sleep(1)
-    found_player = check_player(interaction = interaction, discord_username = player)
-    channel = client.get_channel(1207123664168820736)
-    user = interaction.user
-    if found_player:
-        await interaction.followup.send(f'You have voted for {player} to be MVP of the match')
-        await channel.send(f'{user} has voted - MVP: {player}')
-    else:
-        await interaction.followup.send('This player could not be found in the spreadsheet')
-"""
+    description='Vote for the MVP of your match',
+    guild=discord.Object(id=YOUR_GUILD_ID)
+)
+async def votemvp(interaction: discord.Interaction, username: str):
+    global voting_in_progress, mvp_updates_today
+    member = interaction.user
+
+    # Ensure the user has linked their Riot ID
+    cursor.execute("SELECT PlayerRiotID FROM PlayerStats WHERE DiscordID = ?", (str(member.id),))
+    # MIGHT NEED TO CHANGE THIS LINE IF DATABASE STRUCTURE CHANGES
+    linked_account = cursor.fetchone()
+    if not linked_account or not linked_account[0]:
+        await interaction.response.send_message("You must link your Riot ID before participating in MVP voting. Use `/link` to link your account.", ephemeral=True)
+        return
+
+    # Ensure voting is not exceeding the 3 MVP updates limit per day
+    if mvp_updates_today >= 3:
+        await interaction.response.send_message("The maximum number of MVP votes for today has been reached.", ephemeral=True)
+        return
+
+    # Ensure the user has the Player or Volunteer role
+    if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
+        await interaction.response.send_message("You do not have the necessary role to vote.", ephemeral=True)
+        return
+
+    # Check if voting is in progress
+    if not voting_in_progress:
+        await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
+        return
+
+    # Check if the user already voted
+    if member.id in has_voted:
+        await interaction.response.send_message("You have already voted.", ephemeral=True)
+        return
+
+    # Check if the user voted for someone on the winning team
+    voted_player = discord.utils.get(interaction.guild.members, name=username)
+    if not voted_player:
+        await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
+        return
+
+    cursor.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ? AND DiscordID = ? AND Wins > 0", (voted_player.name, voted_player.id))
+    result = cursor.fetchone()
+    if not result:
+        await interaction.response.send_message(f"{username} is not a valid player on the winning team.", ephemeral=True)
+        return
+
+    # Register the vote
+    votes[voted_player.name] += 1
+    has_voted.add(member.id)
+    await interaction.response.send_message(f"Your vote for {voted_player.name} has been recorded.", ephemeral=True)
+
+    # If this is the first vote and voting is not already in progress, start the voting period
+    if not voting_in_progress:
+        start_voting.start(interaction)
+
+#end of mvp section
+
+#help command section
+
+# /help command with pagination
+@tree.command(
+    name='help',
+    description='Get help for bot commands',
+    guild=discord.Object(id=YOUR_GUILD_ID)
+)
+async def help_command(interaction: discord.Interaction):
+    pages = [
+        discord.Embed(title="Help - Page 1", description="**/link [riot_id]** - Link your Riot ID to your Discord account."),
+        discord.Embed(title="Help - Page 2", description="**/rolepreference** - Set your role preferences for matchmaking."),
+        discord.Embed(title="Help - Page 3", description="**/checkin** - Initiate tournament check-in."),
+        discord.Embed(title="Help - Page 4", description="**/volunteer** - Volunteer to sit out of the current match."),
+        discord.Embed(title="Help - Page 5", description="**/wins [player_1] [player_2] [player_3] [player_4] [player_5]** - Add a win for the specified players."),
+        discord.Embed(title="Help - Page 6", description="**/toxicity [discord_username]** - Give a user a point of toxicity."),
+        discord.Embed(title="Help - Page 7", description="**/clear** - Remove all users from Player and Volunteer roles."),
+        discord.Embed(title="Help - Page 8", description="**/players** - Find all players and volunteers currently enrolled in the game."),
+        discord.Embed(title="Help - Page 9", description="**/points** - Update participation points in the spreadsheet."),
+        discord.Embed(title="Help - Page 10", description="**/matchmake [match_number]** - Form teams for all players enrolled in the game."),
+        discord.Embed(title="Help - Page 11", description="**/votemvp [username]** - Vote for the MVP of your match."),
+    ]
+
+    current_page = 0
+
+    async def update_message():
+        await message.edit(embed=pages[current_page], view=view)
+
+    class HelpView(discord.ui.View):
+        @discord.ui.button(label="Previous", style=discord.ButtonStyle.primary)
+        async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+            nonlocal current_page
+            if current_page > 0:
+                current_page -= 1
+                await update_message()
+
+        @discord.ui.button(label="Next", style=discord.ButtonStyle.primary)
+        async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+            nonlocal current_page
+            if current_page < len(pages) - 1:
+                current_page += 1
+                await update_message()
+
+    view = HelpView()
+    message = await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
+
+
+
 
 #logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
 #starts the bot
