@@ -90,7 +90,10 @@ class GatewayEventFilter(logging.Filter):
 # Dropdown menu for role preference selection
 
 # Riot ID linking command
-@tree.command(name="link", description="Link your Riot ID to your Discord account.")
+@tree.command(
+    name='link',
+    description="Link your Riot ID to your Discord account.",
+    guild = discord.Object(GUILD))
 async def link(interaction: discord.Interaction, riot_id: str):
     member = interaction.user
 
@@ -146,7 +149,10 @@ class RolePreferenceDropdown(discord.ui.Select):
             child.disabled = True
         await self.message.edit(view=self)
 
-@tree.command(name="rolepreference", description="Set your role preferences for matchmaking.")
+@tree.command(
+    name='rolepreference',
+    description="Set your role preferences for matchmaking.",
+    guild = discord.Object(GUILD))
 async def rolepreference(interaction: discord.Interaction):
     member = interaction.user
     if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
@@ -1067,26 +1073,35 @@ async def help_command(interaction: discord.Interaction):
 
     current_page = 0
 
-    async def update_message():
-        await message.edit(embed=pages[current_page], view=view)
-
     class HelpView(discord.ui.View):
+        def __init__(self, *, timeout=180):
+            super().__init__(timeout=timeout)
+            self.message = None
+
+        async def update_message(self, interaction: discord.Interaction):
+            await interaction.response.defer()  # Defer the response to prevent timeout error
+            if self.message:
+                await self.message.edit(embed=pages[current_page], view=self)
+
         @discord.ui.button(label="Previous", style=discord.ButtonStyle.primary)
         async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             nonlocal current_page
             if current_page > 0:
                 current_page -= 1
-                await update_message()
+                await self.update_message(interaction)
 
         @discord.ui.button(label="Next", style=discord.ButtonStyle.primary)
         async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             nonlocal current_page
             if current_page < len(pages) - 1:
                 current_page += 1
-                await update_message()
+                await self.update_message(interaction)
 
     view = HelpView()
-    message = await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
+    initial_response = await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
+    view.message = await initial_response
+
+
 
 #logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
 #starts the bot
