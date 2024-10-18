@@ -8,6 +8,7 @@ import itertools
 import gspread
 import logging
 import random
+import requests
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -32,6 +33,9 @@ SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from t
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 
 # SQLite connection
+# SQLite connection
+async def get_db_connection():
+    return await aiosqlite.connect('ksu_esports_bot.db')
 
 # creating db tables if they don't already exist
 async def initialize_database():
@@ -99,11 +103,12 @@ async def link(interaction: discord.Interaction, riot_id: str):
 
     if response.status_code == 200:
         # Riot ID exists, proceed to link it
-        cursor.execute(
-            "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
-            (riot_id, str(member.id))
-        )
-        conn.commit()
+        async with get_db_connection() as conn:
+            await conn.execute(
+                "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
+                (riot_id, str(member.id))
+            )
+            await conn.commit()
         await interaction.response.send_message(f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.", ephemeral=True)
     else:
         # Riot ID does not exist
@@ -159,25 +164,27 @@ async def rolepreference(interaction: discord.Interaction):
     if not timed_out:
         role_pref_string = ''.join(str(view.values[role]) for role in ["Top", "Jungle", "Mid", "Bot", "Support"])
         # Update database with role preferences
-        cursor.execute(
+        async with await get_db_connection() as conn:
+            await conn.execute(
             "UPDATE PlayerStats SET RolePreference = ? WHERE DiscordID = ?",
             (role_pref_string, str(member.id))
         )
-        conn.commit()
+        await conn.commit()
         await interaction.followup.send(f"Your role preferences have been saved: {role_pref_string}", ephemeral=True)
     else:
         await interaction.followup.send("The role preference selection timed out. Please try again.", ephemeral=True)
 
 
 # code to calculate and update winrate in database
-def update_win_rate(discord_id):
-    cursor.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (discord_id,))
-    result = cursor.fetchone()
+async def update_win_rate(discord_id):
+    async with await get_db_connection() as conn:
+        async with conn.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (discord_id,)) as cursor:
+            result = await cursor.fetchone()
     if result:
         wins, games_played = result
         win_rate = (wins / games_played) * 100 if games_played > 0 else 0
-        cursor.execute("UPDATE PlayerStats SET WinRate = ? WHERE DiscordID = ?", (win_rate, discord_id))
-        conn.commit()
+        await conn.execute("UPDATE PlayerStats SET WinRate = ? WHERE DiscordID = ?", (win_rate, discord_id))
+        await conn.commit()
 
 
 
@@ -449,16 +456,17 @@ def check_player(interaction, discord_username):
         (f'An error occured: {e}')
         return e
     
-def update_wins(winners):
+async def update_wins(winners):
     found_users = 0
-    for winner in winners:
-        cursor.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ?", (winner.lower(),))
-        result = cursor.fetchone()
+    async with await get_db_connection() as conn:
+        for winner in winners:
+            async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ?", (winner.lower(),)) as cursor:
+                result = await cursor.fetchone()
         if result:
             found_users += 1
-            cursor.execute("UPDATE PlayerStats SET Wins = Wins + 1, GamesPlayed = GamesPlayed + 1 WHERE DiscordUsername = ?", (winner.lower(),))
+            await conn.execute("UPDATE PlayerStats SET Wins = Wins + 1, GamesPlayed = GamesPlayed + 1 WHERE DiscordUsername = ?", (winner.lower(),))
             update_win_rate(result[0])  # Assuming DiscordID is the 1st column in the table
-    conn.commit()
+    await conn.commit()
     return found_users == len(winners)
 
 #Command to start check-in
@@ -955,17 +963,18 @@ async def start_voting(interaction: discord.Interaction):
     await interaction.response.send_message("MVP voting has started! You have 5 minutes to vote using `/votemvp [username]`.", ephemeral=True)
     await asyncio.sleep(300)  # 5 minutes
     
+    async with await get_db_connection() as conn:
     # Calculate MVP based on votes
-    if votes:
-        max_votes = max(votes.values())
-        mvp_candidates = [player for player, count in votes.items() if count == max_votes]
-        for mvp in mvp_candidates:
-            cursor.execute("UPDATE PlayerStats SET MVPs = MVPs + 1 WHERE DiscordUsername = ?", (mvp,))
-        conn.commit()
-        await interaction.followup.send(f"Voting is over! The MVP(s) with {max_votes} votes: {', '.join(mvp_candidates)}.")
-        mvp_updates_today += 1
-    else:
-        await interaction.followup.send("No votes were cast. No MVP this round.")
+        if votes:
+            max_votes = max(votes.values())
+            mvp_candidates = [player for player, count in votes.items() if count == max_votes]
+            for mvp in mvp_candidates:
+                await conn.execute("UPDATE PlayerStats SET MVPs = MVPs + 1 WHERE DiscordUsername = ?", (mvp,))
+            conn.commit()
+            await interaction.followup.send(f"Voting is over! The MVP(s) with {max_votes} votes: {', '.join(mvp_candidates)}.")
+            mvp_updates_today += 1
+        else:
+            await interaction.followup.send("No votes were cast. No MVP this round.")
     
     votes.clear()
     has_voted.clear()
@@ -981,39 +990,40 @@ async def votemvp(interaction: discord.Interaction, username: str):
     global voting_in_progress, mvp_updates_today
     member = interaction.user
 
+    async with await get_db_connection() as conn:
     # Ensure the user has linked their Riot ID
-    cursor.execute("SELECT PlayerRiotID FROM PlayerStats WHERE DiscordID = ?", (str(member.id),))
-    # MIGHT NEED TO CHANGE THIS LINE IF DATABASE STRUCTURE CHANGES
-    linked_account = cursor.fetchone()
-    if not linked_account or not linked_account[0]:
-        await interaction.response.send_message("You must link your Riot ID before participating in MVP voting. Use `/link` to link your account.", ephemeral=True)
-        return
+        async with conn.execute("SELECT PlayerRiotID FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+        # Might need to change all these lines slightly if DB structure changes
+            linked_account = await cursor.fetchone()
+        if not linked_account or not linked_account[0]:
+            await interaction.response.send_message("You must link your Riot ID before participating in MVP voting. Use `/link` to link your account.", ephemeral=True)
+            return
 
-    # Ensure voting is not exceeding the 3 MVP updates limit per day
-    if mvp_updates_today >= 3:
-        await interaction.response.send_message("The maximum number of MVP votes for today has been reached.", ephemeral=True)
-        return
+        # Ensure voting is not exceeding the 3 MVP updates limit per day
+        if mvp_updates_today >= 3:
+            await interaction.response.send_message("The maximum number of MVP votes for today has been reached.", ephemeral=True)
+            return
 
-    # Ensure the user has the Player or Volunteer role
-    if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
-        await interaction.response.send_message("You do not have the necessary role to vote.", ephemeral=True)
-        return
+        # Ensure the user has the Player or Volunteer role
+        if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
+            await interaction.response.send_message("You do not have the necessary role to vote.", ephemeral=True)
+            return
 
-    # Check if voting is in progress
-    if not voting_in_progress:
-        await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
-        return
+        # Check if voting is in progress
+        if not voting_in_progress:
+            await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
+            return
 
-    # Check if the user already voted
-    if member.id in has_voted:
-        await interaction.response.send_message("You have already voted.", ephemeral=True)
-        return
+        # Check if the user already voted
+        if member.id in has_voted:
+            await interaction.response.send_message("You have already voted.", ephemeral=True)
+            return
 
-    # Check if the user voted for someone on the winning team
-    voted_player = discord.utils.get(interaction.guild.members, name=username)
-    if not voted_player:
-        await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
-        return
+        # Check if the user voted for someone on the winning team
+        voted_player = discord.utils.get(interaction.guild.members, name=username)
+        if not voted_player:
+            await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
+            return
 
     cursor.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ? AND DiscordID = ? AND Wins > 0", (voted_player.name, voted_player.id))
     result = cursor.fetchone()
@@ -1077,9 +1087,6 @@ async def help_command(interaction: discord.Interaction):
 
     view = HelpView()
     message = await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
-
-
-
 
 #logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
 #starts the bot
