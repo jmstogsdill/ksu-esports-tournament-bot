@@ -762,6 +762,68 @@ def calculate_repetition_penalty(team1, team2, previous_matches):
             penalty += 10  # Add a penalty for repetition
     return penalty
 
+# Some randomization code I was messing around with
+
+# Group players by tier (or nearby tiers)
+def group_players_by_rank(players):
+    tier_groups = {}
+    
+    # Group players into their respective tiers
+    for player in players:
+        if player.tier not in tier_groups:
+            tier_groups[player.tier] = []
+        tier_groups[player.tier].append(player)
+    
+    return tier_groups
+# Shuffle players within each rank group
+def shuffle_players_within_tier_groups(tier_groups):
+    for tier in tier_groups:
+        random.shuffle(tier_groups[tier])
+    return tier_groups
+# Relax rank restriction by borrowing players from nearby ranks
+def balance_tier_groups(tier_groups):
+    balanced_groups = []
+    remaining_players = []
+
+    # Combine players from adjacent ranks if necessary
+    for tier, players in tier_groups.items():
+        if len(players) % 10 != 0:
+            remaining_players.extend(players)
+        else:
+            balanced_groups.append(players)
+
+    # If there are leftover players, merge them into nearby groups
+    for i in range(0, len(remaining_players), 10):
+        group = remaining_players[i:i+10]
+        if len(group) == 10:
+            balanced_groups.append(group)
+        else:
+            # Handle edge cases, add these players to nearby tiers
+            # Or combine them into a custom group
+            pass
+    
+    return balanced_groups
+async def create_random_teams_within_ranks(players):
+    # Group players by rank
+    tier_groups = group_players_by_rank(players)
+    
+    # Shuffle players within each tier group for randomization
+    tier_groups = shuffle_players_within_tier_groups(tier_groups)
+    
+    # Balance the tier groups to make sure each group has a multiple of 10 players
+    balanced_groups = balance_tier_groups(tier_groups)
+
+    # Now create best teams using random players from each balanced group
+    best_teams = []
+    for group in balanced_groups:
+        if len(group) == 10:
+            best_teams.extend(await create_best_teams_helper(group))
+        else:
+            # Handle incomplete groups or relax rules
+            pass
+    
+    return best_teams
+
 
 
 
