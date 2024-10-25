@@ -96,8 +96,8 @@ async def initialize_database():
         ''')
         await conn.commit()
 
-#Patricia - code for command that pulls player stats from database and displays them - added by Patricia on 10/18/24
-@tree.command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
+#Patricia - code for command that pulls player stats from database and displays them - added by Patricia on 10/18/24 (CURRENTLY CAUSING CRASH)
+""" @tree.command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
 async def retrieve_info(self, interaction: Interaction): 
     guild = interaction.guild.id 
     table = "PlayerStats" + str(guild) 
@@ -125,7 +125,7 @@ async def retrieve_info(self, interaction: Interaction):
             connection.close()
             print("SQLite connection is closed")
 
-#end of Patricia's code
+#end of Patricia's code """
 
 RIOT_API_KEY = 'RGAPI-5ec9bb56-4884-4865-856a-1122244c3107' # Riot API Key\
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
