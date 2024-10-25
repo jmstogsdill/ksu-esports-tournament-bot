@@ -92,7 +92,6 @@ async def initialize_database():
                 "RolePreference" TEXT DEFAULT '55555',
                 PRIMARY KEY("DiscordID")
 )
-            )
         ''')
         await conn.commit()
 
