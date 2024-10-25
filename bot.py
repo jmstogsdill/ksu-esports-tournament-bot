@@ -97,7 +97,7 @@ async def initialize_database():
         await conn.commit()
 
 #Patricia - code for command that pulls player stats from database and displays them - added by Patricia on 10/18/24
-@tree.slash_command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
+@tree.command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
 async def retrieve_info(self, interaction: Interaction): 
     guild = interaction.guild.id 
     table = "PlayerStats" + str(guild) 
