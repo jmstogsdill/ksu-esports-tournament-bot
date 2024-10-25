@@ -16,6 +16,12 @@ GOOGLE_SHEETS_ID =
 
 GOOGLE_SHEETS_NAME =
 
+SPREADSHEET_PATH = 
+
+DB_PATH = 
+
+RIOT_API = 
+
 # Generating the Discord bot token
 
 Open the Discord Developer Portal: https://discord.com/developers/applications
@@ -33,7 +39,7 @@ Paste the bot token into your .env file.
 
 Open the Discord client, and under the “Advanced” settings tab, make sure “Developer Mode” is switched on. This enables you to copy Discord user and guild (server) IDs. Right-click the icon of the server you want to use the bot in, then click “Copy Server ID”. Paste the result after “GUILD_TOKEN = “.
 
-# Obtaining Google Sheet ID and Sheet name
+# Obtaining Google Sheet ID and Sheet name (deprecated)
 
 The sheet id is just the ID of the google sheet that you are trying to use. To find it, all you need to do is look at the url of your google sheet. You can find the ID here in the URL:
 
@@ -41,7 +47,21 @@ docs.google.com/spreadsheets/d/ID_IS_HERE/
 
 If your sheet URL has any characters following the final slash shown here, such as “/edit?gid=[numbers]”, exclude them from the .env file.
 
-The final line, “GOOGLE_SHEETS_NAME”, is self-explanatory; write the name of your Google spreadsheet exactly as it appears in your browser  following the “= “, no quotation marks or underscores necessary.
+The next line, “GOOGLE_SHEETS_NAME”, is self-explanatory; write the name of your Google spreadsheet exactly as it appears in your browser  following the “= “, no quotation marks or underscores necessary.
+
+# Setting paths for necessary files
+
+The current version of the bot utilizes an offline solution for indirect management of the database. The host of the bot can manipulate a spreadsheet using the template sheet provided with the bot, and whenever the bot runs it will automatically draw statistics from this sheet to update the database accordingly. Conversely, when users make changes to statistics either directly through DBMS or bot commands (e.g. commands updating wins, MVP points, etc.), the sheet will be updated.
+
+To set up these functions, you must copy the paths of both the spreadsheet (xlsx) file and database (db) file behind their respective entries in ".env". No quotation marks are needed.
+
+# Setting Riot API key
+
+For the bot to retrieve information about players using the Riot API, you will need to request access to a Riot API key. Use this link to apply for a key, and ensure that you select "Personal" key, not "Development". Development keys will expire every 24 hours:
+https://developer.riotgames.com/app-type
+
+The key request can take anywhere from minutes to potentially days to be approved. Once it is, paste it after the RIOT_API entry in ".env".
+
 
 # Setting up Google Sheets API access
 This is currently the most complex part of setup. Following the Google Workspace link below, set up access to the Google Sheets API. When you get to step 2 under “Configure the OAuth consent screen,” ignore what it says about setting the User Type to Internal, as this option will probably be unavailable for you, and set it to External.
