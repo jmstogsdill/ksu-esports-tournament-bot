@@ -3,8 +3,10 @@ import asyncio
 from collections import defaultdict
 import discord
 from discord.ext import commands, tasks
-import os
 import itertools
+import json
+from openpyxl import load_workbook
+import os
 import gspread
 import logging
 import random
@@ -31,35 +33,119 @@ GUILD = os.getenv('GUILD_TOKEN')#Gets the server's id from the .env file and set
 SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
 SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
+# Paths to spreadsheet and SQLite database on the bot host's computer
+SPREADSHEET_PATH = os.getenv('SPREADSHEET_PATH')
+DB_PATH = os.getenv('DB_PATH')
 
-# SQLite connection
+
 # SQLite connection
 async def get_db_connection():
     return await aiosqlite.connect('ksu_esports_bot.db')
+
+# Function to update the Excel file / spreadsheet for offline database manipulation.
+# This implementation (as of 2024-10-25) allows the bot host to update the database by simply altering the
+# spreadsheet, and vice versa; changes through the bot / db update the spreadsheet at the specified path in .env.
+# Niranjanaa:
+def update_excel(player_name, wins, mvps, sheet_name):
+    try:
+        workbook = load_workbook(SPREADSHEET_PATH)
+        if sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            
+        else:
+            raise ValueError(f'Sheet {sheet_name} does not exist in the workbook')
+        
+        # Check if the player already exists in the sheet
+        found = False
+        for row in sheet.iter_rows(min_row=2):  # Assuming the first row is headers
+            if row[0].value == player_name:
+                row[1].value += wins  # Update wins
+                row[2].value += mvps  # Update MVPs
+                found = True
+                break
+
+        if not found:
+            sheet.append([player_name, wins, mvps])  # Append new player if not found
+
+        workbook.save(SPREADSHEET_PATH)
+    except Exception as e:
+        print(f"Error updating Excel file: {e}")
+        
 
 # creating db tables if they don't already exist
 async def initialize_database():
     async with aiosqlite.connect('ksu_esports_bot.db') as conn:
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS "PlayerStats" (
-                "PlayerRiotID"	TEXT UNIQUE,
-                "DiscordUsername"	TEXT NOT NULL,
-                "DiscordID"	TEXT NOT NULL UNIQUE,
-                "Participation"	NUMERIC,
-                "Wins"	INTEGER,
-                "MVPs"	INTEGER DEFAULT 0,
-                "ToxicityPoints"	NUMERIC,
-                "GamesPlayed"	NUMERIC,
-                "WinRate"	REAL,
-                "TotalPoints"	NUMERIC,
+                "DiscordID" TEXT NOT NULL UNIQUE,
+                "DiscordUsername" TEXT NOT NULL,
+                "PlayerRiotID" TEXT UNIQUE,
+                "Participation" NUMERIC DEFAULT 0,
+                "Wins" INTEGER DEFAULT 0,
+                "MVPs" INTEGER DEFAULT 0,
+                "ToxicityPoints" NUMERIC DEFAULT 0,
+                "GamesPlayed" INTEGER DEFAULT 0,
+                "WinRate" REAL,
+                "TotalPoints" NUMERIC DEFAULT 0,
+                "PlayerTier" INTEGER DEFAULT 0,
+                "PlayerRank" TEXT DEFAULT 'UNRANKED',
+                "RolePreference" TEXT DEFAULT '55555',
                 PRIMARY KEY("DiscordID")
+)
             )
         ''')
         await conn.commit()
 
+#Patricia - code for command that pulls player stats from database and displays them - added by Patricia on 10/18/24
+@tree.slash_command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
+async def retrieve_info(self, interaction: Interaction): 
+    guild = interaction.guild.id 
+    table = "PlayerStats" + str(guild) 
+
+    try: 
+        connection = aiosqlite.connect('ksu_esports_bot.db') 
+
+        cursor = connection.cursor() 
+        sql_select_query = "SELECT * FROM" + table + "where user like ' " + str(interaction.user) + " ' "
+        cursor.execute(sql_select_query)
+
+        record = cursor.fetchall()
+
+        received_data = []
+        for row in record: 
+            received_data.append({"DiscordID": str(row[0]), "Message": str(row[2])})
+        await interaction.response.send_message("All Stored Data: \n" + json.dumps(received_data, indent = 1)) 
+
+    except aiosqlite.connector.Error as error: 
+        print("Failed to get record from SQLite table: {}".format(error)) 
+
+    finally: 
+        if connection.is_connected(): 
+            cursor.close()
+            connection.close()
+            print("SQLite connection is closed")
+
+#end of Patricia's code
+
+RIOT_API_KEY = 'RGAPI-5ec9bb56-4884-4865-856a-1122244c3107' # Riot API Key\
+RIOT_API_KEY = os.getenv('RIOT_API_KEY')
+import requests
+
+def get_player_rank(username):
+    url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{username}"
+    headers = {
+        "X-Riot-Token": RIOT_API_KEY
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return response.json()  # Returns the player's information from the API
+    else:
+        print(f"Error fetching player rank: {response.status_code}")
+        return None
+
 api_config = {
     "riotGames": {
-        "lolApiKey": "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744",
+        "lolApiKey": "RGAPI-5ec9bb56-4884-4865-856a-1122244c3107",
         "rank": ["Unranked", "Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"],
         "tier": [1, 2, 3, 4, 5, 6, 7]
     },
@@ -71,6 +157,7 @@ api_config = {
     }
 }
 
+# On bot ready event
 @client.event
 async def on_ready():
     await initialize_database()
@@ -86,6 +173,48 @@ class GatewayEventFilter(logging.Filter):
             return False
         return True"""
 
+# Niranjanaa's DB integration code cont'd (originally from discord_bot.py in repo)
+@tree.command(
+    name='playerstats')
+async def playerstats(ctx, player_name: str, *, sheet_name: str = "Example Spreadsheet - Points"):
+    if not player_name:
+        await ctx.send("Please provide a player name.")
+        return
+
+    conn = await aiosqlite.connect('ksu_esports_bot.db')()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Staging_PlayerStats WHERE Player=?", (player_name,))
+    player = cursor.fetchone()
+
+    if player:
+        await ctx.send(f"Stats for {player_name}: Wins - {player[3]}, MVPs - {player[4]}")
+        update_excel(player_name, player[3], player[4], sheet_name)
+        await ctx.send(f"Player stats for {player_name} have been updated in the Excel sheet '{sheet_name}'.")
+    else:
+        await ctx.send(f"No stats found for {player_name}")
+
+    conn.close()
+
+# Command to record match result
+@tree.command(name="record_match")
+async def record_match(ctx, player_name: str, wins: int, mvps: int, sheet_name: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Update the database with match results
+    cursor.execute("UPDATE Staging_PlayerStats SET Wins = Wins + ?, MVPs = MVPs + ? WHERE Player = ?",
+                   (wins, mvps, player_name))
+    conn.commit()
+
+    # Update the Excel file
+    update_excel(player_name, wins, mvps, sheet_name)
+
+    await ctx.send(f"Match results for {player_name} recorded. Wins: {wins}, MVPs: {mvps}.")
+    conn.close()
+
+# End of Niranjanaa's DB integration code (originally from "discord_bot.py 1" file in repo)
+
+
 # riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
 # Dropdown menu for role preference selection
 
@@ -98,7 +227,7 @@ async def link(interaction: discord.Interaction, riot_id: str):
     member = interaction.user
 
     # Verify that the Riot ID exists using the Riot API
-    api_key = "RGAPI-06e58380-2b89-49b0-8bbc-fb9ee9c0e744"
+    api_key = "RGAPI-5ec9bb56-4884-4865-856a-1122244c3107"
     headers = {"X-Riot-Token": api_key}
     url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{riot_id}"
 
@@ -121,7 +250,7 @@ async def link(interaction: discord.Interaction, riot_id: str):
 class RolePreferenceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=60)
-        roles = ["Top Lane", "Jungle", "Mid Lane", "Bot Lane", "Support"]
+        roles = ["Top", "Jungle", "Mid", "Bot", "Support"]
         for role in roles:
             self.add_item(RolePreferenceDropdown(role))
 
@@ -865,6 +994,12 @@ async def calculate_score_diff(team1, team2):
                      (team1.support.tier - team2.support.tier) ** 2
     return diff
 
+def has_roles(team, required_roles):
+    # Create a set of roles present in the team
+    team_roles = {player.role for player in team}
+    # Check if all required roles are in the team_roles set
+    return all(role in team_roles for role in required_roles)
+
 def get_roles(role_string):
     role_priorities = {'top': 5, 'jungle': 5, 'mid': 5, 'bot': 5, 'support': 5}
     if role_string == 'fill':
@@ -876,7 +1011,7 @@ def get_roles(role_string):
     return role_priorities
 # Synergy score based on roles
 def calculate_synergy(team):
-    if has_roles(team, ["tank", "support", "damage"]):
+    if has_roles(team, ["top", "jungle", "mid", "bot", "support"]):
         return 10  # Higher synergy score
     else:
         return 5  # Lower score for less balanced teams
