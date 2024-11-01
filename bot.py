@@ -1,3 +1,4 @@
+import aiohttp
 import aiosqlite # Using this package instead of sqlite for asynchronous processing support
 import asyncio
 from collections import defaultdict
@@ -7,7 +8,6 @@ import itertools
 import json
 from openpyxl import load_workbook
 import os
-import gspread
 import logging
 import random
 import requests
@@ -40,36 +40,79 @@ DB_PATH = os.getenv('DB_PATH')
 
 # SQLite connection
 async def get_db_connection():
-    return await aiosqlite.connect('ksu_esports_bot.db')
+    return await aiosqlite.connect('ksu_esports_bot.db') # POSSIBLY CHANGE THIS TO USE 'DB_PATH' FROM .env LATER
 
 # Function to update the Excel file / spreadsheet for offline database manipulation.
 # This implementation (as of 2024-10-25) allows the bot host to update the database by simply altering the
 # spreadsheet, and vice versa; changes through the bot / db update the spreadsheet at the specified path in .env.
 # Niranjanaa:
-def update_excel(player_name, wins, mvps, sheet_name):
+from openpyxl import load_workbook
+
+def update_excel(discord_id, player_data, sheet_name):
     try:
+        # Load the workbook and get the correct sheet
         workbook = load_workbook(SPREADSHEET_PATH)
         if sheet_name in workbook.sheetnames:
             sheet = workbook[sheet_name]
-            
         else:
             raise ValueError(f'Sheet {sheet_name} does not exist in the workbook')
-        
+
         # Check if the player already exists in the sheet
         found = False
         for row in sheet.iter_rows(min_row=2):  # Assuming the first row is headers
-            if row[0].value == player_name:
-                row[1].value += wins  # Update wins
-                row[2].value += mvps  # Update MVPs
+            if str(row[0].value) == discord_id:  # Check if Discord ID matches
+                # Update existing row with player data
+                row[0].value = player_data["DiscordID"]
+                row[1].value = player_data["DiscordUsername"]
+                row[2].value = player_data["PlayerRiotID"]
+                row[3].value = player_data["Participation"]
+                row[4].value = player_data["Wins"]
+                row[5].value = player_data["MVPs"]
+                row[6].value = player_data["ToxicityPoints"]
+                row[7].value = player_data["GamesPlayed"]
+                row[8].value = player_data["WinRate"]
+                row[9].value = player_data["TotalPoints"]
+                row[10].value = player_data["PlayerTier"]
+                row[11].value = player_data["PlayerRank"]
+                row[12].value = player_data["RolePreference"]
                 found = True
                 break
 
+        # If player not found, add a new row
         if not found:
-            sheet.append([player_name, wins, mvps])  # Append new player if not found
+            # Find the first truly empty row, ignoring formatting
+            empty_row_idx = None
+            for i, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+                # Check if all cells in the row are empty (ignoring any formatting)
+                if all(cell.value is None for cell in row):
+                    empty_row_idx = i
+                    break
 
+            # If no truly empty row was found, append to the end
+            if empty_row_idx is None:
+                empty_row_idx = sheet.max_row + 1
+
+            # Insert the new data into the found empty row
+            sheet.cell(row=empty_row_idx, column=1).value = player_data["DiscordID"]
+            sheet.cell(row=empty_row_idx, column=2).value = player_data["DiscordUsername"]
+            sheet.cell(row=empty_row_idx, column=3).value = player_data["PlayerRiotID"]
+            sheet.cell(row=empty_row_idx, column=4).value = player_data["Participation"]
+            sheet.cell(row=empty_row_idx, column=5).value = player_data["Wins"]
+            sheet.cell(row=empty_row_idx, column=6).value = player_data["MVPs"]
+            sheet.cell(row=empty_row_idx, column=7).value = player_data["ToxicityPoints"]
+            sheet.cell(row=empty_row_idx, column=8).value = player_data["GamesPlayed"]
+            sheet.cell(row=empty_row_idx, column=9).value = player_data["WinRate"]
+            sheet.cell(row=empty_row_idx, column=10).value = player_data["TotalPoints"]
+            sheet.cell(row=empty_row_idx, column=11).value = player_data["PlayerTier"]
+            sheet.cell(row=empty_row_idx, column=12).value = player_data["PlayerRank"]
+            sheet.cell(row=empty_row_idx, column=13).value = player_data["RolePreference"]
+
+        # Save the workbook after updates
         workbook.save(SPREADSHEET_PATH)
+
     except Exception as e:
         print(f"Error updating Excel file: {e}")
+
         
 
 # creating db tables if they don't already exist
@@ -126,9 +169,7 @@ async def retrieve_info(self, interaction: Interaction):
 
 #end of Patricia's code """
 
-RIOT_API_KEY = 'RGAPI-5ec9bb56-4884-4865-856a-1122244c3107' # Riot API Key\
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
-import requests
 
 def get_player_rank(username):
     url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{username}"
@@ -144,7 +185,7 @@ def get_player_rank(username):
 
 api_config = {
     "riotGames": {
-        "lolApiKey": "RGAPI-5ec9bb56-4884-4865-856a-1122244c3107",
+        "lolApiKey": "RGAPI-b3099ab8-27c8-43a2-93ef-fc09d48fdf65",
         "rank": ["Unranked", "Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"],
         "tier": [1, 2, 3, 4, 5, 6, 7]
     },
@@ -174,44 +215,99 @@ class GatewayEventFilter(logging.Filter):
 
 # Niranjanaa's DB integration code cont'd (originally from discord_bot.py in repo)
 @tree.command(
-    name='playerstats')
-async def playerstats(ctx, player_name: str, *, sheet_name: str = "Example Spreadsheet - Points"):
-    if not player_name:
-        await ctx.send("Please provide a player name.")
+    name='playerstats',
+    description='Get inhouse stats for a server member who has connected their Riot account with /link.',
+    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+)
+async def playerstats(interaction: discord.Interaction, player: discord.Member, sheet_name: str = "PlayerStats"):
+    # Check if player name is given
+    if not player:
+        await interaction.response.send_message("Please provide a player name.", ephemeral=True)
         return
 
-    conn = await aiosqlite.connect('ksu_esports_bot.db')()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Staging_PlayerStats WHERE Player=?", (player_name,))
-    player = cursor.fetchone()
+    try:
+        # Update the player's Discord username in the database if needed, so out-of-date usernames aren't inadvertently written to the sheet
+        await update_username(player)
 
-    if player:
-        await ctx.send(f"Stats for {player_name}: Wins - {player[3]}, MVPs - {player[4]}")
-        update_excel(player_name, player[3], player[4], sheet_name)
-        await ctx.send(f"Player stats for {player_name} have been updated in the Excel sheet '{sheet_name}'.")
-    else:
-        await ctx.send(f"No stats found for {player_name}")
+        # Fetch stats from database
+        async with aiosqlite.connect(DB_PATH) as conn:
+            async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordID=?", (str(player.id),)) as cursor:
+                player_stats = await cursor.fetchone()
 
-    conn.close()
+        # If player exists in the database, create and send an embed with stats
+        if player_stats:
+            embed = discord.Embed(
+                title=f"{player.display_name}'s Stats",
+                color=0xffc629  # Hex color #ffc629
+            )
+            embed.set_thumbnail(url=player.avatar.url if player.avatar else discord.Embed.Empty)
+
+            # Add player stats to the embed
+            embed.add_field(name="Riot ID", value=player_stats[2] or "N/A", inline=False)
+            embed.add_field(name="Player Rank", value=player_stats[11], inline=False)
+            embed.add_field(name="Participation Points", value=player_stats[3], inline=True)
+            embed.add_field(name="Games Played", value=player_stats[7], inline=True)
+            embed.add_field(name="Wins", value=player_stats[4], inline=True)
+            embed.add_field(name="MVPs", value=player_stats[5], inline=True)
+            embed.add_field(name="Penalties", value=player_stats[6], inline=True)
+            embed.add_field(name="Win Rate", value=f"{player_stats[8] * 100:.0f}%" if player_stats[8] is not None else "N/A", inline=True)
+            embed.add_field(name="Total Points", value=player_stats[9], inline=True)
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            # Prepare player data dictionary to pass to update_excel
+            player_data = {
+                "DiscordID": player_stats[0],
+                "DiscordUsername": player_stats[1],
+                "PlayerRiotID": player_stats[2],
+                "Participation": player_stats[3],
+                "Wins": player_stats[4],
+                "MVPs": player_stats[5],
+                "ToxicityPoints": player_stats[6],
+                "GamesPlayed": player_stats[7],
+                "WinRate": player_stats[8],
+                "TotalPoints": player_stats[9],
+                "PlayerTier": player_stats[10],
+                "PlayerRank": player_stats[11],
+                "RolePreference": player_stats[12]
+            }
+
+            # Update Excel sheet in a non-blocking manner
+            await asyncio.to_thread(update_excel, str(player.id), player_data, sheet_name)
+
+            await interaction.followup.send(f"Player stats for {player.display_name} have been updated in the Excel sheet '{sheet_name}'.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"No stats found for {player.display_name}", ephemeral=True)
+
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"An error occurred: {e}")
+        await interaction.response.send_message("An unexpected error occurred while fetching player stats.", ephemeral=True)
+
+
 
 # Command to record match result
-@tree.command(name="record_match")
-async def record_match(ctx, player_name: str, wins: int, mvps: int, sheet_name: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Update the database with match results
-    cursor.execute("UPDATE Staging_PlayerStats SET Wins = Wins + ?, MVPs = MVPs + ? WHERE Player = ?",
-                   (wins, mvps, player_name))
-    conn.commit()
+@tree.command(
+    name="record_match",
+    description="Record the result of a match (WIP)",
+    guild = discord.Object(GUILD))
+async def record_match(interaction: discord.Interaction, player: discord.Member, wins: int, mvps: int, sheet_name: str):
+    async with await get_db_connection() as conn:
+        # Update the database with match results
+        await conn.execute(
+            "UPDATE PlayerStats SET Wins = Wins + ?, MVPs = MVPs + ? WHERE DiscordUsername = ?",
+            (wins, mvps, str(player.id))
+        )
+        await conn.commit()
 
     # Update the Excel file
-    update_excel(player_name, wins, mvps, sheet_name)
+    await interaction.response.defer()  # Defer response to prevent interaction timeout
+    await asyncio.to_thread(update_excel, player.display_name, wins, mvps, sheet_name)
 
-    await ctx.send(f"Match results for {player_name} recorded. Wins: {wins}, MVPs: {mvps}.")
-    conn.close()
+    # Send the response
+    await interaction.followup.send(f"Match results for {player} recorded. Wins: {wins}, MVPs: {mvps}.")
 
-# End of Niranjanaa's DB integration code (originally from "discord_bot.py 1" file in repo)
+# End of Niranjanaa's DB integration code (originally from "discord_bot.py 1" file in repo). Altered by Jackson during week of 10/27
 
 
 # riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
@@ -221,30 +317,64 @@ async def record_match(ctx, player_name: str, wins: int, mvps: int, sheet_name: 
 @tree.command(
     name='link',
     description="Link your Riot ID to your Discord account.",
-    guild = discord.Object(GUILD))
+    guild=discord.Object(GUILD)
+)
 async def link(interaction: discord.Interaction, riot_id: str):
     member = interaction.user
 
+    # Riot ID is in the format 'username#tagline', e.g., 'jacstogs#1234'
+    if '#' not in riot_id:
+        await interaction.response.send_message(
+            "Invalid Riot ID format. Please enter your Riot ID in the format 'username#tagline'.",
+            ephemeral=True
+        )
+        return
+
+    # Split the Riot ID into name and tagline
+    summoner_name, tagline = riot_id.split('#', 1)
+    summoner_name = summoner_name.strip()
+    tagline = tagline.strip()
+
     # Verify that the Riot ID exists using the Riot API
-    api_key = "RGAPI-5ec9bb56-4884-4865-856a-1122244c3107"
+    api_key = os.getenv("RIOT_API_KEY")
     headers = {"X-Riot-Token": api_key}
-    url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{riot_id}"
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{summoner_name}/{tagline}"
 
-    response = requests.get(url, headers=headers)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    # Riot ID exists, proceed to link it
+                    data = await response.json()  # Get the response data
 
-    if response.status_code == 200:
-        # Riot ID exists, proceed to link it
-        async with get_db_connection() as conn:
-            await conn.execute(
-                "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
-                (riot_id, str(member.id))
-            )
-            await conn.commit()
-        await interaction.response.send_message(f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.", ephemeral=True)
-    else:
-        # Riot ID does not exist
-        await interaction.response.send_message(f"The Riot ID '{riot_id}' could not be found. Please double-check and try again.", ephemeral=True)
-        
+                    # Debugging: Print the data to see what comes back from the API
+                    print(f"Riot API response: {data}")
+
+                    async with aiosqlite.connect(DB_PATH) as conn:
+                        await conn.execute(
+                            "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
+                            (riot_id, str(member.id))
+                        )
+                        await conn.commit()
+                    await interaction.response.send_message(
+                        f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.",
+                        ephemeral=True
+                    )
+                else:
+                    # Riot ID does not exist or other error
+                    error_msg = await response.text()
+                    print(f"Riot API error response: {error_msg}")
+                    await interaction.response.send_message(
+                        f"The Riot ID '{riot_id}' could not be found. Please double-check and try again.",
+                        ephemeral=True
+                    )
+    except Exception as e:
+        print(f"An error occurred while connecting to the Riot API: {e}")
+        await interaction.response.send_message(
+            "An unexpected error occurred while trying to link your Riot ID. Please try again later.",
+            ephemeral=True
+        )
+
 # role preference command
 class RolePreferenceView(discord.ui.View):
     def __init__(self):
@@ -533,83 +663,123 @@ def get_values_matchmaking(range_name):
     except HttpError as error:
         print(f'An error occured: {error}')
         return error
+    
+# Function to update Discord username in the database if it's been changed
+async def update_username(player: discord.Member):
+    try:
+        async with aiosqlite.connect('ksu_esports_bot.db') as conn:
+            # Fetch the player's current data from the database
+            async with conn.execute("SELECT DiscordUsername FROM PlayerStats WHERE DiscordID=?", (str(player.id),)) as cursor:
+                player_stats = await cursor.fetchone()
+
+            # If player exists in the database and the username is outdated, update it
+            if player_stats:
+                stored_username = player_stats[0]
+                current_username = player.display_name
+
+                if stored_username != current_username:
+                    await conn.execute(
+                        "UPDATE PlayerStats SET DiscordUsername = ? WHERE DiscordID = ?",
+                        (current_username, str(player.id))
+                    )
+                    await conn.commit()
+                    print(f"Updated username in database for {player.id} from '{stored_username}' to '{current_username}'.")
+
+    except Exception as e:
+        # Log the error or handle it appropriately
+        print(f"An error occurred while updating username: {e}")
+
 
 #Method to write values from a Google Sheets spreadsheet.
-def update_points(interaction, player_users, volunteer_users):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    player = get(interaction.guild.roles, name = 'Player')
-    volunteer = get(interaction.guild.roles, name = 'Volunteer')
-    try:
-        values = sh.sheet1.get_values(range_name)
-        for i, row in enumerate(values, start = 1):
-            for player in player_users:
-                if player.lower() == row[0].lower():
-                    player_participation = int(row[2])
-                    sh.sheet1.update_cell(i, 3, player_participation + 1)
-                    current_matches = int(row[7])
-                    sh.sheet1.update_cell(i, 8, current_matches + 1)
-            for volunteer in volunteer_users:
-                if volunteer.lower() == row[0].lower():
-                    volunteer_participation = int(row[2])
-                    sh.sheet1.update_cell(i, 3, volunteer_participation + 1)
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
-    
-def update_toxicity(interaction, discord_username):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    try:
-        values = sh.sheet1.get_values(range_name)
-        found_user = False
-        for i, row in enumerate(values, start = 1):
-            if discord_username.lower() == row[0].lower():
-                user_toxicity = int(row[5])
-                sh.sheet1.update_cell(i, 6, user_toxicity + 1)
-                found_user = True
-        return found_user   
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
-    
+async def update_points(members):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        not_found_users = []
 
-def check_player(interaction, discord_username):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    try:
-        values = sh.sheet1.get_values(range_name)
-        found_user = False
-        for i, row in enumerate(values, start = 1):
-            if discord_username.lower() == row[0].lower():
-                found_user = True
-        return found_user   
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
+        # Iterate through all members with Player or Volunteer roles
+        for member in members:
+            async with conn.execute("SELECT Participation, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+                result = await cursor.fetchone()
+
+            if result:
+                participation, games_played = result
+                # Update Participation and GamesPlayed
+                await conn.execute(
+                    "UPDATE PlayerStats SET Participation = ?, GamesPlayed = ? WHERE DiscordID = ?",
+                    (participation + 1, games_played + 1, str(member.id))
+                )
+            else:
+                # Add users who are not found in the database to the list
+                not_found_users.append(member.display_name)
+
+        await conn.commit()
+
+    # Return a dictionary with the success state and list of not found users
+    return {
+        "success": len(members) != len(not_found_users),
+        "not_found": not_found_users
+    }
+    
+async def update_toxicity(member):
+    async with aiosqlite.connect(DB_PATH) as conn:
+        # Attempt to find the user in the PlayerStats table
+        async with conn.execute("SELECT ToxicityPoints FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+            result = await cursor.fetchone()
+
+        if result:
+            toxicity_points = result[0]
+            # Increment the ToxicityPoints and update TotalPoints accordingly
+            await conn.execute(
+                """
+                UPDATE PlayerStats 
+                SET ToxicityPoints = ?, TotalPoints = (Participation + Wins - ?)
+                WHERE DiscordID = ?
+                """,
+                (toxicity_points + 1, toxicity_points + 1, str(member.id))
+            )
+            await conn.commit()
+            return True  # Successfully updated user
+
+        return False  # User not found
+
+async def check_winners_in_db(winners):
+    not_found_users = []
+    async with aiosqlite.connect(DB_PATH) as conn:
+        for winner in winners:
+            # Check if the player exists in the database
+            async with conn.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (str(winner.id),)) as cursor:
+                result = await cursor.fetchone()
+
+            if not result:
+                # Add to not found list
+                not_found_users.append(winner)
     
 async def update_wins(winners):
-    found_users = 0
-    async with await get_db_connection() as conn:
+    async with aiosqlite.connect(DB_PATH) as conn:
         for winner in winners:
-            async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ?", (winner.lower(),)) as cursor:
+            # Since we already checked for existence, we can directly update
+            async with conn.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (str(winner.id),)) as cursor:
                 result = await cursor.fetchone()
-        if result:
-            found_users += 1
-            await conn.execute("UPDATE PlayerStats SET Wins = Wins + 1, GamesPlayed = GamesPlayed + 1 WHERE DiscordUsername = ?", (winner.lower(),))
-            update_win_rate(result[0])  # Assuming DiscordID is the 1st column in the table
-    await conn.commit()
-    return found_users == len(winners)
+                if result:
+                    wins, games_played = result
+                    # Update the Wins and GamesPlayed for the player
+                    await conn.execute(
+                        "UPDATE PlayerStats SET Wins = ?, GamesPlayed = ? WHERE DiscordID = ?",
+                        (wins + 1, games_played + 1, str(winner.id))
+                    )
+
+        await conn.commit()
 
 #Command to start check-in
 @tree.command(
     name = 'checkin',
     description = 'Initiate tournament check-in',
     guild = discord.Object(GUILD))
-async def checkin(interaction):
+async def checkin(interaction: discord.Interaction):
+    player = interaction.user
+    
+    # Upon checking in, update the player's Discord username in the database if it has been changed
+    await update_username(player)
+    
     view = CheckinButtons()
     await interaction.response.send_message('Check-in for the tournament has started! You have 15 minutes to check in.', view = view)
 
@@ -618,43 +788,67 @@ async def checkin(interaction):
     name = 'volunteer',
     description = 'Initiate check for volunteers',
     guild = discord.Object(GUILD))
-async def volunteer(interaction):
+async def volunteer(interaction: discord.Interaction):
+    player = interaction.user
+    
+    # Upon volunteering to sit out for a round, update the player's Discord username in the database if it has been changed.
+    # This may be redundant if users are eventually restricted from volunteering before they've checked in.
+    await update_username(player)
+    
     view = volunteerButtons()
     await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out.', view = view)
 
 @tree.command(
-        name = 'toxicity',
-        description = 'Give a user a point of toxicity.',
-        guild = discord.Object(GUILD))
-async def toxicity(interaction: discord.Interaction, discord_username: str):
+    name='toxicity',
+    description='Give a user a point of toxicity (subtracting 1 from their total League inhouse points).',
+    guild=discord.Object(GUILD)
+)
+@commands.has_permissions(administrator=True)
+async def toxicity(interaction: discord.Interaction, member: discord.Member):
     try:
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
-        found_user = update_toxicity(interaction = interaction, discord_username = discord_username)
+        # Defer the response to prevent interaction timeout
+        await interaction.response.defer(ephemeral=True)
+
+        # Update the toxicity points in the database
+        found_user = await update_toxicity(member)
+
         if found_user:
-            await interaction.followup.send(f"{discord_username}'s toxicity points have been updated.")
+            await interaction.followup.send(f"{member.display_name}'s toxicity points have been updated.")
         else:
-            await interaction.followup.send(f"{discord_username} could not be found.")
+            await interaction.followup.send(f"{member.display_name} could not be found in the database.")
+    except commands.MissingPermissions:
+        await interaction.response.send_message("You do not have permission to use this command. Only administrators can give toxicity points.", ephemeral=True)
     except Exception as e:
-        print(f'An error occured: {e}')
+        print(f'An error occurred: {e}')
+        await interaction.followup.send("An unexpected error occurred while updating toxicity points.", ephemeral=True)
 
 @tree.command(
-        name = 'wins',
-        description = "Adds a point to each winner's 'win' points.",
-        guild = discord.Object(GUILD))
-async def wins(interaction: discord.Interaction, player_1: str, player_2: str, player_3: str, player_4: str, player_5: str):
+    name='wins',
+    description="Updates the number of wins for each player on a winning team.",
+    guild=discord.Object(GUILD)
+)
+@commands.has_permissions(administrator=True)
+async def wins(interaction: discord.Interaction, player_1: discord.Member, player_2: discord.Member, player_3: discord.Member, player_4: discord.Member, player_5: discord.Member):
     try:
         winners = [player_1, player_2, player_3, player_4, player_5]
         await interaction.response.defer(ephemeral=True)
-        await asyncio.sleep(1)
-        found_users = update_wins(interaction = interaction, winners = winners)
-        if found_users:
-            await interaction.followup.send("All winners' 'win' points have been updated.")
+
+        not_found_users = await check_winners_in_db(winners)
+
+        if not_found_users:
+            missing_users = ", ".join([user.display_name for user in not_found_users])
+            await interaction.followup.send(f"The following players could not be found in the database, so no wins were updated: \n{missing_users}")
         else:
-            await interaction.followup.send("At least one of the winners could not be found.")
+            await update_wins(winners)
+            await interaction.followup.send("All winners' 'win' points have been updated.")
+
+    except commands.MissingPermissions:
+        await interaction.response.send_message("You do not have permission to use this command. Only administrators can update players' wins.", ephemeral=True)
+
     except Exception as e:
         print(f'An error occurred: {e}')
-        await interaction.followup.send("An error occurred while updating the wins.")
+        await interaction.followup.send("An error occurred while updating wins.", ephemeral=True)
+
         
 #Slash command to remove all users from the Player and Volunteer role.
 @tree.command(
@@ -734,32 +928,42 @@ async def players(interaction: discord.Interaction):
         print(f'An error occured: {e}')
 
 @tree.command(
-        name='points',
-        description='Print data from specific cell value',
-        guild = discord.Object(GUILD))
+    name='points',
+    description='Give participation points to all players and volunteers.',
+    guild=discord.Object(GUILD)
+)
+@commands.has_permissions(administrator=True)
 async def points(interaction: discord.Interaction):
     try:
-        #Finds all players in discord, adds them to a list
-        player_users = []
-        player = get(interaction.guild.roles, name = 'Player')
-        for user in interaction.guild.members:
-            if player in user.roles:
-                player_users.append(user.name)
-        
-        #Finds all volunteers in discord, adds them to a list
-        volunteer_users = []
-        volunteer = get(interaction.guild.roles, name = 'Volunteer')
-        for user in interaction.guild.members:
-            if volunteer in user.roles:
-                volunteer_users.append(user.name)
-        
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
-        update_points(interaction = interaction, player_users = player_users, volunteer_users = volunteer_users)
-        await interaction.followup.send('Updated spreadsheet!')
+        # Finds all players and volunteers in Discord, adds them to respective lists
+        player_role = get(interaction.guild.roles, name='Player')
+        volunteer_role = get(interaction.guild.roles, name='Volunteer')
 
+        players_and_volunteers = [
+            member for member in interaction.guild.members
+            if player_role in member.roles or volunteer_role in member.roles
+        ]
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Update points for all players and volunteers
+        update_result = await update_points(players_and_volunteers)
+
+        # Send followup messages
+        if update_result["success"]:
+            await interaction.followup.send(f"Participation points have been updated for all eligible players/volunteers.", ephemeral=True)
+        # This "not_found" state *shouldn't* ever be necessary because people will be required to use /link and get themselves in the DB before they can even use /checkin and /volunteer,
+        # but I figured it was worth having anyway just in case changes need to be made at some point.
+        if update_result["not_found"]:
+            not_found_users = ', '.join(update_result["not_found"])
+            await interaction.followup.send(f"The following users were not found in the database: {not_found_users}.", ephemeral=True)
+            
+    except commands.MissingPermissions:
+        await interaction.response.send_message("You do not have permission to use this command. Only administrators can give update players' participation points.", ephemeral=True)
+        
     except Exception as e:
-        print(f'An error occured: {e}')
+        print(f'An error occurred: {e}')
+        await interaction.followup.send("An unexpected error occurred while updating participation points.", ephemeral=True)
 
 @tree.command(
     name = 'matchmake',
@@ -1101,21 +1305,56 @@ mvp_updates_today = 0  # Track the number of MVP updates today (max 3 per day)
 async def start_voting(interaction: discord.Interaction):
     global voting_in_progress, mvp_updates_today
     voting_in_progress = True
-    await interaction.response.send_message("MVP voting has started! You have 5 minutes to vote using `/votemvp [username]`.", ephemeral=True)
-    await asyncio.sleep(300)  # 5 minutes
+
+    # Get Player and Volunteer roles
+    player_role = discord.utils.get(interaction.guild.roles, name="Player")
+    volunteer_role = discord.utils.get(interaction.guild.roles, name="Volunteer")
+    if not player_role or not volunteer_role:
+        await interaction.followup.send("Player or Volunteer roles are not configured properly.")
+        return
+
+    # Mention Player and Volunteer roles
+    mentions = f"{player_role.mention} {volunteer_role.mention}"
+
+    # Send voting initiation message with role mentions
+    await interaction.response.send_message(
+        f"MVP voting has started! You have 5 minutes to vote using `/votemvp [username]`. {mentions}",
+        ephemeral=False
+    )
+
+    # Send countdown warnings
+    await asyncio.sleep(120)  # Wait for 2 minutes
+    await interaction.followup.send("There are only **3 minutes** remaining for MVP voting!", ephemeral=False)
     
+    await asyncio.sleep(60)  # Wait for 1 minute
+    await interaction.followup.send("There are only **2 minutes** remaining for MVP voting!", ephemeral=False)
+    
+    await asyncio.sleep(60)  # Wait for 1 minute
+    await interaction.followup.send("There is only **1 minute** remaining for MVP voting!", ephemeral=False)
+
+    await asyncio.sleep(60)  # Wait for the final minute to end
+
     async with await get_db_connection() as conn:
-    # Calculate MVP based on votes
+        # Calculate MVP based on votes
         if votes:
             max_votes = max(votes.values())
             mvp_candidates = [player for player, count in votes.items() if count == max_votes]
+            
+            # Update MVPs in the database
             for mvp in mvp_candidates:
                 await conn.execute("UPDATE PlayerStats SET MVPs = MVPs + 1 WHERE DiscordUsername = ?", (mvp,))
             conn.commit()
-            await interaction.followup.send(f"Voting is over! The MVP(s) with {max_votes} votes: {', '.join(mvp_candidates)}.")
+
+            # Prepare MVP result message
+            if len(mvp_candidates) == 1:
+                await interaction.followup.send(f"🎉 {mvp_candidates[0]} has been voted the MVP of this round! 🎉", ephemeral=False)
+            else:
+                mvp_list = ", ".join(mvp_candidates)
+                await interaction.followup.send(f"🎉 The MVP(s) with the highest votes are: {mvp_list}. 🎉", ephemeral=False)
+
             mvp_updates_today += 1
         else:
-            await interaction.followup.send("No votes were cast. No MVP this round.")
+            await interaction.followup.send("No votes were cast. No MVP this round.", ephemeral=False)
     
     votes.clear()
     has_voted.clear()
@@ -1127,59 +1366,56 @@ async def start_voting(interaction: discord.Interaction):
     description='Vote for the MVP of your match',
     guild=discord.Object(GUILD)
 )
-async def votemvp(interaction: discord.Interaction, username: str):
+async def votemvp(interaction: discord.Interaction, player: discord.Member):
     global voting_in_progress, mvp_updates_today
     member = interaction.user
 
-    async with await get_db_connection() as conn:
-    # Ensure the user has linked their Riot ID
-        async with conn.execute("SELECT PlayerRiotID FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
-        # Might need to change all these lines slightly if DB structure changes
-            linked_account = await cursor.fetchone()
-        if not linked_account or not linked_account[0]:
-            await interaction.response.send_message("You must link your Riot ID before participating in MVP voting. Use `/link` to link your account.", ephemeral=True)
-            return
+    try:
+        async with aiosqlite.connect(DB_PATH) as conn:
+            # Ensure the user has linked their Riot ID
+            async with conn.execute("SELECT PlayerRiotID FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+                linked_account = await cursor.fetchone()
+            if not linked_account or not linked_account[0]:
+                await interaction.response.send_message("You must link your Riot ID before participating in MVP voting. Use `/link` to link your account.", ephemeral=True)
+                return
 
-        # Ensure voting is not exceeding the 3 MVP updates limit per day
-        if mvp_updates_today >= 3:
-            await interaction.response.send_message("The maximum number of MVP votes for today has been reached.", ephemeral=True)
-            return
+            # Ensure voting is not exceeding the 3 MVP updates limit per day
+            if mvp_updates_today >= 3:
+                await interaction.response.send_message("The maximum number of MVP votes for today has been reached.", ephemeral=True)
+                return
 
-        # Ensure the user has the Player or Volunteer role
-        if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
-            await interaction.response.send_message("You do not have the necessary role to vote.", ephemeral=True)
-            return
+            # Ensure the user has the Player or Volunteer role
+            if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
+                await interaction.response.send_message("You do not have the necessary role to vote.", ephemeral=True)
+                return
 
-        # Check if voting is in progress
+            # Check if voting is in progress
+            if not voting_in_progress:
+                await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
+                return
+
+            # Check if the user already voted
+            if member.id in has_voted:
+                await interaction.response.send_message("You have already voted.", ephemeral=True)
+                return
+
+            # Register the vote
+            votes[player.display_name] += 1
+            has_voted.add(member.id)
+
+            await interaction.response.send_message(f"Your vote for {player.display_name} has been recorded.", ephemeral=True)
+            # Notify everyone about the vote
+            await interaction.followup.send(f"{member.display_name} has voted for {player.display_name}.", ephemeral=False)
+
+        # If this is the first vote and voting is not already in progress, start the voting period
         if not voting_in_progress:
-            await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
-            return
+            start_voting.start(interaction)
 
-        # Check if the user already voted
-        if member.id in has_voted:
-            await interaction.response.send_message("You have already voted.", ephemeral=True)
-            return
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        await interaction.response.send_message("An unexpected error occurred while processing your vote.", ephemeral=True)
 
-        # Check if the user voted for someone on the winning team
-        voted_player = discord.utils.get(interaction.guild.members, name=username)
-        if not voted_player:
-            await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
-            return
 
-    cursor.execute("SELECT * FROM PlayerStats WHERE DiscordUsername = ? AND DiscordID = ? AND Wins > 0", (voted_player.name, voted_player.id))
-    result = cursor.fetchone()
-    if not result:
-        await interaction.response.send_message(f"{username} is not a valid player on the winning team.", ephemeral=True)
-        return
-
-    # Register the vote
-    votes[voted_player.name] += 1
-    has_voted.add(member.id)
-    await interaction.response.send_message(f"Your vote for {voted_player.name} has been recorded.", ephemeral=True)
-
-    # If this is the first vote and voting is not already in progress, start the voting period
-    if not voting_in_progress:
-        start_voting.start(interaction)
 
 #end of mvp section
 

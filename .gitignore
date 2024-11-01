@@ -6,3 +6,4 @@
 *.env
 credentials.json
 token.json
+ksu_esports_bot.db
