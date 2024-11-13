@@ -6,15 +6,17 @@ This is a Discord bot for organizing and managing League of Legends tournaments 
 
 # How to set up the Discord bot
 
-To start with, create a file called “.env” in the same directory as “bot.py” and the other files downloaded from the GitHub repository linked above. Paste this code into it:
+To start with, create a file called “.env” in the same directory as “bot.py” and the other files downloaded from the GitHub repository linked above. Paste this text into it:
 
-BOT_TOKEN = 
+`BOT_TOKEN = `
 
-GUILD_TOKEN =
+`GUILD_TOKEN = `
 
-GOOGLE_SHEETS_ID =
+`SPREADSHEET_PATH = `
 
-GOOGLE_SHEETS_NAME =
+`DB_PATH = `
+
+`RIOT_API_KEY = `
 
 # Generating the Discord bot token
 
@@ -33,52 +35,18 @@ Paste the bot token into your .env file.
 
 Open the Discord client, and under the “Advanced” settings tab, make sure “Developer Mode” is switched on. This enables you to copy Discord user and guild (server) IDs. Right-click the icon of the server you want to use the bot in, then click “Copy Server ID”. Paste the result after “GUILD_TOKEN = “.
 
-# Obtaining Google Sheet ID and Sheet name
+# Declare spreadsheet & database paths
 
-The sheet id is just the ID of the google sheet that you are trying to use. To find it, all you need to do is look at the url of your google sheet. You can find the ID here in the URL:
+WIP, may be removed if we take these sections out of .env and declare paths to the bot directory inside our code. We could also make these optional if the bot host wants to move the files to more convenient locations.
 
-docs.google.com/spreadsheets/d/ID_IS_HERE/
+# Setting up Riot API key
 
-If your sheet URL has any characters following the final slash shown here, such as “/edit?gid=[numbers]”, exclude them from the .env file.
+WIP
 
-The final line, “GOOGLE_SHEETS_NAME”, is self-explanatory; write the name of your Google spreadsheet exactly as it appears in your browser  following the “= “, no quotation marks or underscores necessary.
+# Installation of dependencies
+To finish setting up the bot, ensure you have at least Python version 3.12.6 installed on the machine that will be hosting it, and run the following command in the same directory as the bot's files (including bot.py and requirements.txt).
 
-# Setting up Google Sheets API access
-This is currently the most complex part of setup. Following the Google Workspace link below, set up access to the Google Sheets API. When you get to step 2 under “Configure the OAuth consent screen,” ignore what it says about setting the User Type to Internal, as this option will probably be unavailable for you, and set it to External.
-
-https://developers.google.com/sheets/api/quickstart/python
-
-After you have followed the step under the heading “Install the Google client library,” you are done; you do not need to set up or run the sample code shown on the page.
-Now that your Sheets API access is set up, go to Google Cloud Console again:
-
-https://console.cloud.google.com
-
-Navigate to the “APIs & Services” menu, then click on the “Credentials” button in the list of sub-menus on the left of the page. Hover over the “Create Credentials” button and click “Choose OAuth client ID”:
-
-For “Application type,” select “Desktop app”, and click to download a JSON file, which you should rename “credentials.json”.
-
-In the same directory as “.env”, “bot.py” and other bot-related files you’re working with, create a new folder called “src” and drop credentials.json inside. You will also need to place a copy of credentials.json in the following location:
-
-"C:\Users\user\AppData\Roaming\gspread" OR "~/.config/gspread"
-
-If any of the folders mentioned above don’t already exist, you will need to create them as they are necessary to make the bot run. Future versions of the bot should attempt to check for and/or create these folders automatically, rendering this step unnecessary.
-
-# Installation of packages
-To finish setting up the bot, there are a few Python packages you need to have installed on your computer for it to work:
-
-aiosqlite
-
-asyncio
-
-discord
-
-gspread
-
-python-dotenv
-
-Google API
-
-All of these packages can be installed by typing `pip3 install [package name]` in Command Prompt, with the exception of the Google API package. The command to install it is found in the Google Developers link from the section where we set up API access (typing it should’ve been the last thing you did before finishing the step).
+`pip3 install -r requirements.txt`
 
 # Adding the Discord bot to your server
 
@@ -90,9 +58,8 @@ You should also go in your Discord server settings and create “Player” and �
 
 # Finishing setup
 
-Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. If successful, you will see an output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client.
+Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. Depending on your installation you may also be able to run it by simply double-clicking the bot.py file. If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client.
 
 # Note:
-Future versions of the bot will likely remove or heavily alter the usage of the gspread package and related Google API functionality, so the latter half of this guide is being rewritten. As such, this readme may not reflect the real steps needed to set up the bot at the moment.
 
-Future versions of this guide will also utilize screenshots that should simplify setup considerably.
+Future versions of this guide could utilize screenshots to simplify setup, though this will add to the file size of our repository.

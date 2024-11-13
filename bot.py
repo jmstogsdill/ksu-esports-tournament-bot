@@ -33,7 +33,6 @@ TOKEN = os.getenv('BOT_TOKEN')#Gets the bot's password token from the .env file 
 GUILD = os.getenv('GUILD_TOKEN')#Gets the server's id from the .env file and sets it to GUILD.
 SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
 SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 # Paths to spreadsheet and SQLite database on the bot host's computer
 SPREADSHEET_PATH = os.getenv('SPREADSHEET_PATH')
 DB_PATH = os.getenv('DB_PATH')
@@ -139,64 +138,99 @@ async def initialize_database():
         ''')
         await conn.commit()
 
-#Patricia - code for command that pulls player stats from database and displays them - added by Patricia on 10/18/24 (CURRENTLY CAUSING CRASH)
-""" @tree.command(name = "retrieve_info", description = "Retrieve some data for a user stored in the database", guild_ids = [discordID])
-async def retrieve_info(self, interaction: Interaction): 
-    guild = interaction.guild.id 
-    table = "PlayerStats" + str(guild) 
-
-    try: 
-        connection = aiosqlite.connect('ksu_esports_bot.db') 
-
-        cursor = connection.cursor() 
-        sql_select_query = "SELECT * FROM" + table + "where user like ' " + str(interaction.user) + " ' "
-        cursor.execute(sql_select_query)
-
-        record = cursor.fetchall()
-
-        received_data = []
-        for row in record: 
-            received_data.append({"DiscordID": str(row[0]), "Message": str(row[2])})
-        await interaction.response.send_message("All Stored Data: \n" + json.dumps(received_data, indent = 1)) 
-
-    except aiosqlite.connector.Error as error: 
-        print("Failed to get record from SQLite table: {}".format(error)) 
-
-    finally: 
-        if connection.is_connected(): 
-            cursor.close()
-            connection.close()
-            print("SQLite connection is closed")
-
-#end of Patricia's code """
-
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
-def get_player_rank(username):
-    url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{username}"
+async def get_encrypted_summoner_id(riot_id):
+    """
+    Fetches the encrypted summoner ID from the Riot API using Riot ID.
+    Args:
+    - riot_id: The player's Riot ID in 'username#tagline' format.
+    Returns:
+    - Encrypted summoner ID (summonerId) if successful, otherwise None.
+    """
+    # Riot ID is expected to be in the format 'username#tagline'
+    if '#' not in riot_id:
+        return None
+
+    username, tagline = riot_id.split('#', 1)
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{tagline}"
     headers = {
         "X-Riot-Token": RIOT_API_KEY
     }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()  # Returns the player's information from the API
-    else:
-        print(f"Error fetching player rank: {response.status_code}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    puuid = data.get('puuid', None)
+                    if puuid:
+                        # Use the PUUID to fetch the encrypted summoner ID
+                        summoner_url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                        async with session.get(summoner_url, headers=headers) as summoner_response:
+                            if summoner_response.status == 200:
+                                summoner_data = await summoner_response.json()
+                                encrypted_summoner_id = summoner_data.get('id', None)  # The summonerId is referred to as `id` in this response
+                                return encrypted_summoner_id
+                            else:
+                                print(f"Error fetching summoner data: {summoner_response.status}, response: {await summoner_response.text()}")
+                                return None
+                else:
+                    print(f"Error fetching encrypted summoner ID: {response.status}, response: {await response.text()}")
+                    return None
+    except Exception as e:
+        print(f"An error occurred while connecting to the Riot API: {e}")
         return None
 
-api_config = {
-    "riotGames": {
-        "lolApiKey": "RGAPI-5ec9bb56-4884-4865-856a-1122244c3107",
-        "rank": ["Unranked", "Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond", "Master", "Grandmaster", "Challenger"],
-        "tier": [1, 2, 3, 4, 5, 6, 7]
-    },
-    "discord": {
-        "discordID": "1278960443653623818",
-        # "clientSecret": "aSrS7YCrCsQmUpRbtLLlDXpF71J0DmC2",  # Is this needed?
-        "OWNER": "452664152343707655",
-        "token": "MTI3ODk2MDQ0MzY1MzYyMzgxOA.Giu-dm.MWs00Unu751IJFJ9qJ-asre9iR2-bJnnhtNAj0"
+
+    """
+    Fetches the player's rank from Riot API and updates it in the database.
+    Args:
+    - conn: The aiosqlite connection object.
+    - discord_id: The player's Discord ID.
+    - encrypted_summoner_id: The player's encrypted summoner ID.
+    - max_retries was added because sometimes the bot failed to connect to the Riot API and properly pull player rank etc (which was leading to rank showing as N/A in /stats.)
+      Now, the bot automatically retries the connection several times if this occurs.
+    """
+async def update_player_rank(conn, discord_id, encrypted_summoner_id):
+    # Initial delay before making the API call
+    await asyncio.sleep(3)  # Wait for 3 seconds before the first attempt
+    
+    url = f"https://na1.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_summoner_id}"
+    headers = {
+        "X-Riot-Token": RIOT_API_KEY
     }
-}
+
+    max_retries = 3  # Number of retry attempts
+
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        for entry in data:
+                            if entry.get("queueType") == "RANKED_SOLO_5x5":
+                                # Extract only the tier for the rank (e.g., "GOLD")
+                                rank = entry.get('tier', 'N/A')
+                                await conn.execute(
+                                    "UPDATE PlayerStats SET PlayerRank = ? WHERE DiscordID = ?",
+                                    (rank, discord_id)
+                                )
+                                await conn.commit()
+                                return rank
+                        return "UNRANKED"
+                    else:
+                        print(f"Error fetching player rank: {response.status}, response: {await response.text()}")
+        except Exception as e:
+            print(f"An error occurred while connecting to the Riot API (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                print(f"Failed attempt {attempt + 1}, retrying in 5 seconds...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+
+    print("All attempts to connect to the Riot API have failed.")
+    return "N/A"  # Return "N/A" if all attempts fail
+
 
 # On bot ready event
 @client.event
@@ -215,101 +249,90 @@ class GatewayEventFilter(logging.Filter):
             return False
         return True"""
 
-# Niranjanaa's DB integration code cont'd (originally from discord_bot.py in repo)
+"""
+Command to display stats for a given user which simultaneously syncs the user's stats from the database to a spreadsheet (specified in .env) for easy viewing.0
+This command pulls and displays some stats from the database, but also makes an API call through update_player_rank() to get the user's updated League of Legends rank.
+There is a known error where player rank may display as "N/A" on the command embed due to a connection issue, even if the API key is set up properly. However, typing the command a 1-2 more
+times resolves this.
+"""
 @tree.command(
-    name='playerstats',
+    name='stats',
     description='Get inhouse stats for a server member who has connected their Riot account with /link.',
     guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
 )
-async def playerstats(interaction: discord.Interaction, player: discord.Member, sheet_name: str = "PlayerStats"):
+async def stats(interaction: discord.Interaction, player: discord.Member, sheet_name: str = "PlayerStats"):
     # Check if player name is given
     if not player:
         await interaction.response.send_message("Please provide a player name.", ephemeral=True)
         return
 
     try:
-        # Update the player's Discord username in the database if needed, so out-of-date usernames aren't inadvertently written to the sheet
+        # Update the player's Discord username in the database if needed
         await update_username(player)
 
-        # Fetch stats from database
+        # Connect to the database
         async with aiosqlite.connect(DB_PATH) as conn:
+            # Fetch stats from the database
             async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordID=?", (str(player.id),)) as cursor:
                 player_stats = await cursor.fetchone()
 
-        # If player exists in the database, create and send an embed with stats
-        if player_stats:
-            embed = discord.Embed(
-                title=f"{player.display_name}'s Stats",
-                color=0xffc629  # Hex color #ffc629
-            )
-            embed.set_thumbnail(url=player.avatar.url if player.avatar else discord.Embed.Empty)
+            # If player exists in the database, proceed
+            if player_stats:
+                riot_id = player_stats[2]  # The Riot ID column from the database
 
-            # Add player stats to the embed
-            embed.add_field(name="Riot ID", value=player_stats[2] or "N/A", inline=False)
-            embed.add_field(name="Player Rank", value=player_stats[11], inline=False)
-            embed.add_field(name="Participation Points", value=player_stats[3], inline=True)
-            embed.add_field(name="Games Played", value=player_stats[7], inline=True)
-            embed.add_field(name="Wins", value=player_stats[4], inline=True)
-            embed.add_field(name="MVPs", value=player_stats[5], inline=True)
-            embed.add_field(name="Penalties", value=player_stats[6], inline=True)
-            embed.add_field(name="Win Rate", value=f"{player_stats[8] * 100:.0f}%" if player_stats[8] is not None else "N/A", inline=True)
-            embed.add_field(name="Total Points", value=player_stats[9], inline=True)
+                # Update encrypted summoner ID and rank in the database
+                if riot_id:
+                    encrypted_summoner_id = await get_encrypted_summoner_id(riot_id)
+                    player_rank = await update_player_rank(conn, str(player.id), encrypted_summoner_id) if encrypted_summoner_id else "N/A"
+                else:
+                    player_rank = "N/A"
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+                # Create an embed to display player stats
+                embed = discord.Embed(
+                    title=f"{player.display_name}'s Stats",
+                    color=0xffc629  # Hex color #ffc629
+                )
+                embed.set_thumbnail(url=player.avatar.url if player.avatar else None)
 
-            # Prepare player data dictionary to pass to update_excel
-            player_data = {
-                "DiscordID": player_stats[0],
-                "DiscordUsername": player_stats[1],
-                "PlayerRiotID": player_stats[2],
-                "Participation": player_stats[3],
-                "Wins": player_stats[4],
-                "MVPs": player_stats[5],
-                "ToxicityPoints": player_stats[6],
-                "GamesPlayed": player_stats[7],
-                "WinRate": player_stats[8],
-                "TotalPoints": player_stats[9],
-                "PlayerTier": player_stats[10],
-                "PlayerRank": player_stats[11],
-                "RolePreference": player_stats[12]
-            }
+                # Add player stats to the embed
+                embed.add_field(name="Riot ID", value=riot_id or "N/A", inline=False)
+                embed.add_field(name="Player Rank", value=player_rank, inline=False)
+                embed.add_field(name="Participation Points", value=player_stats[3], inline=True)
+                embed.add_field(name="Games Played", value=player_stats[7], inline=True)
+                embed.add_field(name="Wins", value=player_stats[4], inline=True)
+                embed.add_field(name="MVPs", value=player_stats[5], inline=True)
+                embed.add_field(name="Win Rate", value=f"{player_stats[8] * 100:.0f}%" if player_stats[8] is not None else "N/A", inline=True)
 
-            await asyncio.to_thread(update_excel, str(player.id), player_data, sheet_name)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
 
-            await interaction.followup.send(f"Player stats for {player.display_name} have been updated in the Excel sheet '{sheet_name}'.", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"No stats found for {player.display_name}", ephemeral=True)
+                # Prepare player data dictionary to pass to update_excel
+                player_data = {
+                    "DiscordID": player_stats[0],
+                    "DiscordUsername": player_stats[1],
+                    "PlayerRiotID": player_stats[2],
+                    "Participation": player_stats[3],
+                    "Wins": player_stats[4],
+                    "MVPs": player_stats[5],
+                    "ToxicityPoints": player_stats[6],
+                    "GamesPlayed": player_stats[7],
+                    "WinRate": player_stats[8],
+                    "PlayerTier": player_stats[10],
+                    "PlayerRank": player_rank,
+                    "RolePreference": player_stats[12]
+                }
+
+                # Update the Excel sheet in a non-blocking manner
+                await asyncio.to_thread(update_excel, str(player.id), player_data, sheet_name)
+
+                await interaction.followup.send(f"Player stats for {player.display_name} have been updated in the Excel sheet '{sheet_name}'.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"No stats found for {player.display_name}", ephemeral=True)
 
     except Exception as e:
         # Log the error or handle it appropriately
         print(f"An error occurred: {e}")
         await interaction.response.send_message("An unexpected error occurred while fetching player stats.", ephemeral=True)
-
-
-
-# Command to record match result
-@tree.command(
-    name="record_match",
-    description="Record the result of a match (WIP)",
-    guild = discord.Object(GUILD))
-async def record_match(interaction: discord.Interaction, player: discord.Member, wins: int, mvps: int, sheet_name: str):
-    async with await get_db_connection() as conn:
-        # Update the database with match results
-        await conn.execute(
-            "UPDATE PlayerStats SET Wins = Wins + ?, MVPs = MVPs + ? WHERE DiscordUsername = ?",
-            (wins, mvps, str(player.id))
-        )
-        await conn.commit()
-
-    # Update the Excel file
-    await interaction.response.defer()  # Defer response to prevent interaction timeout
-    await asyncio.to_thread(update_excel, player.display_name, wins, mvps, sheet_name)
-
-    # Send the response
-    await interaction.followup.send(f"Match results for {player} recorded. Wins: {wins}, MVPs: {mvps}.")
-
-# End of Niranjanaa's DB integration code (originally from "discord_bot.py 1" file in repo). Altered by Jackson during week of 10/27
-
+        
 
 # riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
 # Dropdown menu for role preference selection
@@ -448,16 +471,34 @@ async def confirm(interaction: discord.Interaction):
 
 
 
-# role preference command
+# Role preference command
 class RolePreferenceView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, member_id, initial_values):
         super().__init__(timeout=60)
+        self.member_id = member_id
+        self.values = initial_values  # Use the initial preferences from the database
+        self.embed_message = None  # Track the embed message to edit later
         roles = ["Top", "Jungle", "Mid", "Bot", "Support"]
         for role in roles:
-            self.add_item(RolePreferenceDropdown(role))
+            self.add_item(RolePreferenceDropdown(role, self))  # Pass the view to the dropdown
+
+    async def update_embed_message(self, interaction):
+        # Create an embed to display role preferences
+        embed = discord.Embed(title="Role Preferences", color=0xffc629)
+        for role, value in self.values.items():
+            embed.add_field(name=role, value=f"Preference: {value}", inline=False)
+
+        # Send or edit the ephemeral embed message with the updated preferences
+        if self.embed_message is None:
+            self.embed_message = await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await self.embed_message.edit(embed=embed)
+
 
 class RolePreferenceDropdown(discord.ui.Select):
-    def __init__(self, role):
+    def __init__(self, role, parent_view: RolePreferenceView):
+        self.role = role
+        self.parent_view = parent_view  # Reference to the parent view
         options = [
             discord.SelectOption(label=str(i), value=str(i)) for i in range(1, 6)
         ]
@@ -467,49 +508,69 @@ class RolePreferenceDropdown(discord.ui.Select):
             max_values=1,
             options=options,
         )
-        self.role = role
 
     async def callback(self, interaction: discord.Interaction):
-        view: RolePreferenceView = self.view
-        view.values[self.role] = int(self.values[0])
-        await interaction.response.defer()  # Acknowledge the interaction
+        # Update the selected value in the parent view's `values` dictionary
+        self.parent_view.values[self.role] = int(self.values[0])
 
-    async def on_timeout(self):
-        # Handles timeout for the dropdown view
-        for child in self.children:
-            child.disabled = True
-        await self.message.edit(view=self)
+        # Concatenate the role preferences into a single string
+        role_pref_string = ''.join(str(self.parent_view.values[role]) for role in ["Top", "Jungle", "Mid", "Bot", "Support"])
+
+        # Update the database with the new role preferences
+        async with aiosqlite.connect(DB_PATH) as conn:
+            await conn.execute(
+                "UPDATE PlayerStats SET RolePreference = ? WHERE DiscordID = ?",
+                (role_pref_string, str(self.parent_view.member_id))
+            )
+            await conn.commit()
+
+        # Acknowledge interaction
+        await interaction.response.defer()  # Acknowledge the interaction without updating the message
+
+        # Update the role preferences embed
+        await self.parent_view.update_embed_message(interaction)
+
 
 @tree.command(
     name='rolepreference',
     description="Set your role preferences for matchmaking.",
-    guild = discord.Object(GUILD))
+    guild=discord.Object(GUILD)
+)
 async def rolepreference(interaction: discord.Interaction):
     member = interaction.user
+
+    # Check if the user has the Player or Volunteer role
     if not any(role.name in ["Player", "Volunteer"] for role in member.roles):
         await interaction.response.send_message("You must have the Player or Volunteer role to set role preferences.", ephemeral=True)
         return
 
-    # Create the view to display dropdowns for each role
-    view = RolePreferenceView()
-    view.values = {role: 5 for role in ["Top", "Jungle", "Mid", "Bot", "Support"]}  # Default priorities; 5 should correspond to a user NEVER being matched on a team set to that role. 4 is "neutral" ie the user has no preference to it.
+    # Check if the user is in the database and retrieve their current preferences
+    async with aiosqlite.connect(DB_PATH) as conn:
+        async with conn.execute("SELECT RolePreference FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+            user_data = await cursor.fetchone()
 
-    await interaction.response.send_message("Please select your roles in order of preference, with 1 being most preferred:", view=view, ephemeral=True)
+        if not user_data:
+            await interaction.response.send_message("You need to link your Riot ID using /link before setting role preferences.", ephemeral=True)
+            return
 
-    # Wait for the user to interact with the dropdowns or timeout
-    timed_out = await view.wait()
-    if not timed_out:
-        role_pref_string = ''.join(str(view.values[role]) for role in ["Top", "Jungle", "Mid", "Bot", "Support"])
-        # Update database with role preferences
-        async with await get_db_connection() as conn:
-            await conn.execute(
-            "UPDATE PlayerStats SET RolePreference = ? WHERE DiscordID = ?",
-            (role_pref_string, str(member.id))
-        )
-        await conn.commit()
-        await interaction.followup.send(f"Your role preferences have been saved: {role_pref_string}", ephemeral=True)
-    else:
-        await interaction.followup.send("The role preference selection timed out. Please try again.", ephemeral=True)
+    # Convert the existing role preferences into a dictionary
+    role_pref_string = user_data[0]
+    initial_values = {
+        "Top": int(role_pref_string[0]),
+        "Jungle": int(role_pref_string[1]),
+        "Mid": int(role_pref_string[2]),
+        "Bot": int(role_pref_string[3]),
+        "Support": int(role_pref_string[4])
+    }
+
+    # Create the view with initial values and send initial response
+    view = RolePreferenceView(member.id, initial_values)
+    await interaction.response.send_message(
+        "Please select your roles in order of preference, with 1 being the most preferred:", 
+        view=view,
+        ephemeral=True
+    )
+
 
 
 # code to calculate and update winrate in database
@@ -740,7 +801,7 @@ def get_values_matchmaking(range_name):
 # Function to update Discord username in the database if it's been changed
 async def update_username(player: discord.Member):
     try:
-        async with aiosqlite.connect('ksu_esports_bot.db') as conn:
+        async with aiosqlite.connect(DB_PATH) as conn:
             # Fetch the player's current data from the database
             async with conn.execute("SELECT DiscordUsername FROM PlayerStats WHERE DiscordID=?", (str(player.id),)) as cursor:
                 player_stats = await cursor.fetchone()
@@ -929,26 +990,50 @@ async def wins(interaction: discord.Interaction, player_1: discord.Member, playe
         print(f'An error occurred: {e}')
         await interaction.followup.send("An error occurred while updating wins.", ephemeral=True)
 
-        
-#Slash command to remove all users from the Player and Volunteer role.
+       
+# Slash command to remove all users from the Player and Volunteer roles.
 @tree.command(
-    name = 'clear',
-    description = 'Remove all users from Players and Volunteer roles.',
-    guild = discord.Object(GUILD))
+    name='clear',
+    description='Remove all users from Player and Volunteer roles.',
+    guild=discord.Object(GUILD)
+)
 async def remove(interaction: discord.Interaction):
     try:
-        player = get(interaction.guild.roles, name = 'Player')
-        volunteer = get(interaction.guild.roles, name = 'Volunteer')
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
+        player = get(interaction.guild.roles, name='Player')
+        volunteer = get(interaction.guild.roles, name='Volunteer')
+
+        # Acknowledge the interaction to avoid timeouts.
+        await interaction.response.defer(ephemeral=True)
+
+        permission_issue = False
+
+        # Iterate through all members and attempt to remove roles
         for user in interaction.guild.members:
-            if player in user.roles:
-                await user.remove_roles(player)
-            if volunteer in user.roles:
-                await user.remove_roles(volunteer)
-        await interaction.followup.send('All users have been removed from roles.')
+            try:
+                if player in user.roles:
+                    await user.remove_roles(player)
+                if volunteer in user.roles:
+                    await user.remove_roles(volunteer)
+            except discord.Forbidden:
+                # If a permission error occurs, set the flag
+                permission_issue = True
+                print(f"Could not remove roles from {user.display_name}. Check role hierarchy.")
+
+        # Prepare the response message
+        if permission_issue:
+            response_message = (
+                "Attempted to remove Player and Volunteer roles from all users.\n"
+                "Some users could not be updated due to role hierarchy or missing permissions."
+            )
+        else:
+            response_message = "All users have been successfully removed from Player and Volunteer roles."
+
+        # Send the follow-up message to the user
+        await interaction.followup.send(response_message, ephemeral=True)
+
     except Exception as e:
-        print(f'An error occured: {e}')
+        print(f'An error occurred: {e}')
+        await interaction.followup.send("An unexpected error occurred while removing roles from users.", ephemeral=True)
 
 #Slash command to find and count all of the players and volunteers
 @tree.command(
