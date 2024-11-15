@@ -1,9 +1,16 @@
 
 *.code-workspace
 *.config
-*.txt
 *.DS_Store
 *.env
 credentials.json
 token.json
 ksu_esports_bot.db
+
+# Ignore all `.xlsx` and `.txt` files so bot users' spreadsheets and databases filled with user info aren't pushed
+*.xlsx
+*.txt
+
+# Exceptions for template files
+!PlayerStats.xlsx
+!main_db.db

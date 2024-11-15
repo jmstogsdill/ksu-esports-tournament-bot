@@ -2,21 +2,11 @@
 
 KSU IT Capstone Fall 2024 - Project 17 - KSU Esports Tournament Bot (Team 2)
 
-This is a Discord bot for organizing and managing League of Legends tournaments within the Kennesaw State University Esports Discord server. It builds off of a preexisting bot created by a capstone team during the spring 2024 semester.
+This is a Discord bot for organizing and managing tournaments within the Kennesaw State University League of Legends Discord server. It builds off of a preexisting bot created by a capstone team during the spring 2024 semester.
 
 # How to set up the Discord bot
 
-To start with, create a file called “.env” in the same directory as “bot.py” and the other files downloaded from the GitHub repository linked above. Paste this text into it:
-
-`BOT_TOKEN = `
-
-`GUILD_TOKEN = `
-
-`SPREADSHEET_PATH = `
-
-`DB_PATH = `
-
-`RIOT_API_KEY = `
+After you've downloaded the contents of this GitHub repository, locate the `.env.template` file and rename it to just `.env`. We will be filling this `.env` file with several values to allow the Discord bot to function.
 
 # Generating the Discord bot token
 
@@ -37,11 +27,19 @@ Open the Discord client, and under the “Advanced” settings tab, make sure �
 
 # Declare spreadsheet & database paths
 
-WIP, may be removed if we take these sections out of .env and declare paths to the bot directory inside our code. We could also make these optional if the bot host wants to move the files to more convenient locations.
+We have two template files - "PlayerStats.xlsx" and "main_db.db" - included in this repository. **If you are planning to make changes to the bot after use, make sure you change these files' names** or edit .gitignore, otherwise you may inadvertently upload files containing user data.
+
+Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So these two lines would look like this:
+`SPREADSHEET_PATH= PlayerStats.xlsx`
+`DB_PATH= main_db.db`
+
+Make sure you change the names of these 
 
 # Setting up Riot API key
 
-WIP
+Visit https://developer.riotgames.com/app-type, make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key. When you click your username in the top-right corner, click "Apps" in the dropdown, and you should see your app listed somewhere in the dark column on the left side of the screen. Select this, and you will see a "General Info" section containing the status of your registration and (if it's approved) an API key beginning with "RGAPI". Copy this into the line of .env with `RIOT_API_KEY`.
+
+In our experience, getting the app approved and receiving the key was extremely fast - it seemingly took just a few minutes - but it's possible that this process could last for a day or longer. If that is the case for you and you need a temporary API key, return to the main Riot developer dashboard page, and you can see a "Development API Key" which will expire every 24 hours.
 
 # Installation of dependencies
 To finish setting up the bot, ensure you have at least Python version 3.12.6 installed on the machine that will be hosting it, and run the following command in the same directory as the bot's files (including bot.py and requirements.txt).
@@ -60,6 +58,14 @@ You should also go in your Discord server settings and create “Player” and �
 
 Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. Depending on your installation you may also be able to run it by simply double-clicking the bot.py file. If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client.
 
-# Note:
+# Notes
 
-Future versions of this guide could utilize screenshots to simplify setup, though this will add to the file size of our repository.
+If you are planning to adjust 
+
+# Recommendations for Futher Development
+
+The following is a list of recommendations by our team for future capstone students looking to improve upon our work.
+
+- Screenshots can be included in a GitHub repository and embedded in README.md, simplifying the bot setup process
+- When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
+- Finish implementation of Docker support to provide a convenient alternative to normal setup
