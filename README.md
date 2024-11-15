@@ -4,6 +4,15 @@ KSU IT Capstone Fall 2024 - Project 17 - KSU Esports Tournament Bot (Team 2)
 
 This is a Discord bot for organizing and managing tournaments within the Kennesaw State University League of Legends Discord server. It builds off of a preexisting bot created by a capstone team during the spring 2024 semester.
 
+# Contents
+
+**[Setup/Installation](#how-to-set-up-the-discord-bot)**
+
+**[Recommendations for Future Development](#recommendations-for-further-development)**
+
+**[User Guide](#user-guide)**
+
+
 # How to set up the Discord bot
 
 After you've downloaded the contents of this GitHub repository, locate the `.env.template` file and rename it to just `.env`. We will be filling this `.env` file with several values to allow the Discord bot to function.
@@ -88,3 +97,9 @@ The following is a list of recommendations by our team for future capstone stude
 - The bot could automatically create a channel (e.g. #registration) if it does not already exist, and use Discord's "modal" functionality to show users a form having them enter/update both their Riot ID and role preferences simultaneously. This would simplify the bot's
 - When /resetdb is entered twice within 10 seconds (i.e. successfully performing a reset), the initial confirmation message is erroneously sent a second time along with the message announcing a successful reset. The 10-second expiration message is also sent afterward, despite the reset already being carried out. This command could also be reworked to remove the need for an import of the "datetime" library.
 - Rework / finish implementation of MVP voting to allow for multiple voting pools, as the current matchmaking implementation provides for creation of multiple lobbies with concurrently-running matches. In other words, users with the "Player" and "Volunteer" from different lobbies should each be able to vote for MVPs only within their own lobby. A possible solution for this is tying MVP voting directly to the /win command, but there should also be functionality for users to vote for an "ace" (MVP on the losing team).
+
+
+
+# User Guide & List of Commands
+
+*Note: this section is a work-in-progress. Documentation available through the bot's /help command will be shown here shortly.*
