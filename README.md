@@ -29,7 +29,7 @@ Open the Discord client, and under the “Advanced” settings tab, make sure �
 
 We have two template files - "PlayerStats.xlsx" and "main_db.db" - included in this repository. **If you are planning to make changes to the bot after use, make sure you change these files' names** or edit .gitignore, otherwise you may inadvertently upload files containing user data.
 
-Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So the relevant lines of `.env` would look like this if you don't change the templates' names or locations:
+Unless you want to move your spreadsheet and database files to another folder or rename them, **you can leave `SPREADSHEET_PATH` and `DB_PATH` to their defaults**, which are relative paths specifying the template spreadsheet/database files we have included in the repository.
 
 `SPREADSHEET_PATH=PlayerStats.xlsx`
 
@@ -83,3 +83,6 @@ The following is a list of recommendations by our team for future capstone stude
 - Screenshots can be included in a GitHub repository and embedded in README.md, simplifying the bot setup process.
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
 - Finish implementation of Docker support to provide a convenient and more portable alternative to normal setup.
+- /stats embed UI could be improved to display a user's full ranking information (for example, GOLD II instead of just GOLD). This change would necessitate documentation specifying that different tiers within ranks do not affect matchmaking, however.
+- A possible UX improvement is combining /checkin and /sitout (formerly /volunteer) into a single command with 3 buttons.
+- The bot could automatically create a channel (e.g. #registration) if it does not already exist, and use Discord's "modal" functionality to show users a form having them enter/update both their Riot ID and role preferences simultaneously. This would simplify the bot's

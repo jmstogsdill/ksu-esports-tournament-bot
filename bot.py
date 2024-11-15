@@ -3,18 +3,19 @@ import aiosqlite # Using this package instead of sqlite for asynchronous process
 import asyncio
 from collections import defaultdict
 import discord
-from discord import AllowedMentions
+from discord import AllowedMentions, app_commands
 from discord.ext import commands, tasks
+from discord.utils import get
+from dotenv import load_dotenv, find_dotenv
 import itertools
 import json
+import logging
 from openpyxl import load_workbook
 import os
-import logging
+import platform
 import random
+import traceback
 
-from dotenv import load_dotenv, find_dotenv
-from discord import app_commands
-from discord.utils import get
 
 load_dotenv(find_dotenv())
 intents = discord.Intents.default()
@@ -23,95 +24,35 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
+
 TOKEN = os.getenv('BOT_TOKEN')#Gets the bot's password token from the .env file and sets it to TOKEN.
 GUILD = os.getenv('GUILD_TOKEN')#Gets the server's id from the .env file and sets it to GUILD.
-SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
-SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
-# Paths to spreadsheet and SQLite database on the bot host's computer
-SPREADSHEET_PATH = os.getenv('SPREADSHEET_PATH')
+# Paths for spreadsheet and SQLite database on the bot host's device
+SPREADSHEET_PATH = os.path.abspath(os.getenv('SPREADSHEET_PATH'))
 DB_PATH = os.getenv('DB_PATH')
+RIOT_API_KEY = os.getenv('RIOT_API_KEY')
+TIER_WEIGHT = float(os.getenv('TIER_WEIGHT', 0.7))  # Default value of 0.7 if not specified in .env
+ROLE_PREFERENCE_WEIGHT = float(os.getenv('ROLE_PREFERENCE_WEIGHT', 0.3))  # Default value of 0.3 if not specified in .env
+TIER_GROUPS = os.getenv('TIER_GROUPS', 'UNRANKED,IRON,BRONZE,SILVER:GOLD,PLATINUM:EMERALD:DIAMOND:MASTER:GRANDMASTER:CHALLENGER') # Setting default tier configuration if left blank in .env
+
+
+# # Adjust event loop policy for Windows
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+# Semaphore to limit the number of concurrent API requests to Riot (added to address connection errors pulling player rank with /stats)
+api_semaphore = asyncio.Semaphore(5)  # Limit concurrent requests to 5
+
+session = None
 
 
 # SQLite connection
 async def get_db_connection():
     return await aiosqlite.connect(DB_PATH)
 
-# Function to update the Excel file / spreadsheet for offline database manipulation.
-# This implementation (as of 2024-10-25) allows the bot host to update the database by simply altering the
-# spreadsheet, and vice versa; changes through the bot / db update the spreadsheet at the specified path in .env.
-
-from openpyxl import load_workbook
-
-def update_excel(discord_id, player_data, sheet_name):
-    try:
-        # Load the workbook and get the correct sheet
-        workbook = load_workbook(SPREADSHEET_PATH)
-        if sheet_name in workbook.sheetnames:
-            sheet = workbook[sheet_name]
-        else:
-            raise ValueError(f'Sheet {sheet_name} does not exist in the workbook')
-
-        # Check if the player already exists in the sheet
-        found = False
-        for row in sheet.iter_rows(min_row=2):  # Assuming the first row is headers
-            if str(row[0].value) == discord_id:  # Check if Discord ID matches
-                # Update existing row with player data
-                row[0].value = player_data["DiscordID"]
-                row[1].value = player_data["DiscordUsername"]
-                row[2].value = player_data["PlayerRiotID"]
-                row[3].value = player_data["Participation"]
-                row[4].value = player_data["Wins"]
-                row[5].value = player_data["MVPs"]
-                row[6].value = player_data["ToxicityPoints"]
-                row[7].value = player_data["GamesPlayed"]
-                row[8].value = player_data["WinRate"]
-                row[9].value = player_data["TotalPoints"]
-                row[10].value = player_data["PlayerTier"]
-                row[11].value = player_data["PlayerRank"]
-                row[12].value = player_data["RolePreference"]
-                found = True
-                break
-
-        # If player not found, add a new row
-        if not found:
-            # Find the first truly empty row, ignoring formatting
-            empty_row_idx = None
-            for i, row in enumerate(sheet.iter_rows(min_row=2), start=2):
-                # Check if all cells in the row are empty (ignoring any formatting)
-                if all(cell.value is None for cell in row):
-                    empty_row_idx = i
-                    break
-
-            # If no truly empty row was found, append to the end
-            if empty_row_idx is None:
-                empty_row_idx = sheet.max_row + 1
-
-            # Insert the new data into the found empty row
-            sheet.cell(row=empty_row_idx, column=1).value = player_data["DiscordID"]
-            sheet.cell(row=empty_row_idx, column=2).value = player_data["DiscordUsername"]
-            sheet.cell(row=empty_row_idx, column=3).value = player_data["PlayerRiotID"]
-            sheet.cell(row=empty_row_idx, column=4).value = player_data["Participation"]
-            sheet.cell(row=empty_row_idx, column=5).value = player_data["Wins"]
-            sheet.cell(row=empty_row_idx, column=6).value = player_data["MVP Points"]
-            sheet.cell(row=empty_row_idx, column=7).value = player_data["ToxicityPoints"]
-            sheet.cell(row=empty_row_idx, column=8).value = player_data["GamesPlayed"]
-            sheet.cell(row=empty_row_idx, column=9).value = player_data["WinRate"]
-            sheet.cell(row=empty_row_idx, column=10).value = player_data["TotalPoints"]
-            sheet.cell(row=empty_row_idx, column=11).value = player_data["PlayerTier"]
-            sheet.cell(row=empty_row_idx, column=12).value = player_data["PlayerRank"]
-            sheet.cell(row=empty_row_idx, column=13).value = player_data["RolePreference"]
-
-        # Save the workbook after updates
-        workbook.save(SPREADSHEET_PATH)
-
-    except Exception as e:
-        print(f"Error updating Excel file: {e}")
-
-        
-
 # creating db tables if they don't already exist
 async def initialize_database():
-    async with aiosqlite.connect('ksu_esports_bot.db') as conn:
+    async with aiosqlite.connect(DB_PATH) as conn:
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS "PlayerStats" (
                 "DiscordID" TEXT NOT NULL UNIQUE,
@@ -132,103 +73,16 @@ async def initialize_database():
         ''')
         await conn.commit()
 
-RIOT_API_KEY = os.getenv('RIOT_API_KEY')
-
-async def get_encrypted_summoner_id(riot_id):
-    """
-    Fetches the encrypted summoner ID from the Riot API using Riot ID.
-    Args:
-    - riot_id: The player's Riot ID in 'username#tagline' format.
-    Returns:
-    - Encrypted summoner ID (summonerId) if successful, otherwise None.
-    """
-    # Riot ID is expected to be in the format 'username#tagline'
-    if '#' not in riot_id:
-        return None
-
-    username, tagline = riot_id.split('#', 1)
-    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{tagline}"
-    headers = {
-        "X-Riot-Token": RIOT_API_KEY
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    puuid = data.get('puuid', None)
-                    if puuid:
-                        # Use the PUUID to fetch the encrypted summoner ID
-                        summoner_url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-                        async with session.get(summoner_url, headers=headers) as summoner_response:
-                            if summoner_response.status == 200:
-                                summoner_data = await summoner_response.json()
-                                encrypted_summoner_id = summoner_data.get('id', None)  # The summonerId is referred to as `id` in this response
-                                return encrypted_summoner_id
-                            else:
-                                print(f"Error fetching summoner data: {summoner_response.status}, response: {await summoner_response.text()}")
-                                return None
-                else:
-                    print(f"Error fetching encrypted summoner ID: {response.status}, response: {await response.text()}")
-                    return None
-    except Exception as e:
-        print(f"An error occurred while connecting to the Riot API: {e}")
-        return None
-
-
-    """
-    Fetches the player's rank from Riot API and updates it in the database.
-    Args:
-    - conn: The aiosqlite connection object.
-    - discord_id: The player's Discord ID.
-    - encrypted_summoner_id: The player's encrypted summoner ID.
-    - max_retries was added because sometimes the bot failed to connect to the Riot API and properly pull player rank etc (which was leading to rank showing as N/A in /stats.)
-      Now, the bot automatically retries the connection several times if this occurs.
-    """
-async def update_player_rank(conn, discord_id, encrypted_summoner_id):
-    # Initial delay before making the API call
-    await asyncio.sleep(3)  # Wait for 3 seconds before the first attempt
-    
-    url = f"https://na1.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_summoner_id}"
-    headers = {
-        "X-Riot-Token": RIOT_API_KEY
-    }
-
-    max_retries = 3  # Number of retry attempts
-
-    for attempt in range(max_retries):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        for entry in data:
-                            if entry.get("queueType") == "RANKED_SOLO_5x5":
-                                # Extract only the tier for the rank (e.g., "GOLD")
-                                rank = entry.get('tier', 'N/A')
-                                await conn.execute(
-                                    "UPDATE PlayerStats SET PlayerRank = ? WHERE DiscordID = ?",
-                                    (rank, discord_id)
-                                )
-                                await conn.commit()
-                                return rank
-                        return "UNRANKED"
-                    else:
-                        print(f"Error fetching player rank: {response.status}, response: {await response.text()}")
-        except Exception as e:
-            print(f"An error occurred while connecting to the Riot API (attempt {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                print(f"Failed attempt {attempt + 1}, retrying in 5 seconds...")
-                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
-
-    print("All attempts to connect to the Riot API have failed.")
-    return "N/A"  # Return "N/A" if all attempts fail
-
-
 # On bot ready event
 @client.event
 async def on_ready():
+    global session
+    # Initialize aiohttp session when the bot starts (simplified)
+    connector = aiohttp.TCPConnector(
+        ttl_dns_cache=300,  # Cache DNS resolution for 5 minutes
+        ssl=False           # Disable SSL verification (use with caution)
+    )
+    session = aiohttp.ClientSession(connector=connector)
     
     await initialize_database()
     await tree.sync(guild=discord.Object(GUILD))
@@ -255,23 +109,181 @@ async def on_ready():
 
     # Adjust Player and Volunteer roles to be below the bot role, if possible
     if bot_role is not None:
-        new_position = max(bot_role.position - 1, 1)  # Ensure the new position is greater than 0
+        new_position = max(bot_role.position - 1, 1)
         await player_role.edit(position=new_position)
         await volunteer_role.edit(position=new_position)
+        
+# Safe API call function with retries for better error handling
+async def safe_api_call(url, headers):
+    max_retries = 3
+    retry_delay = 1  # Delay between retries in seconds
+
+    for attempt in range(max_retries):
+        try:
+            async with api_semaphore:  # Limit concurrent access to the API
+                # Using a timeout context inside the aiohttp request
+                timeout = aiohttp.ClientTimeout(total=5)  # Set a 5-second total timeout for the request
+                async with session.get(url, headers=headers, timeout=timeout) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    elif response.status == 429:  # Rate limit hit
+                        retry_after = response.headers.get("Retry-After", 1)
+                        print(f"Rate limit reached. Retrying after {retry_after} seconds.")
+                        await asyncio.sleep(int(retry_after))  # Wait for specified time
+                    else:
+                        print(f"Error fetching data: {response.status}, response: {await response.text()}")
+                        return None
+        except aiohttp.ClientConnectorError as e:
+            print(f"Connection error on attempt {attempt + 1}/{max_retries}: {e}")
+        except asyncio.TimeoutError as e:
+            print(f"Timeout error on attempt {attempt + 1}/{max_retries}: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred on attempt {attempt + 1}/{max_retries}: {e}")
+            print(traceback.format_exc())  # Print the full traceback for more details
+
+        # Retry if there are remaining attempts
+        if attempt < max_retries - 1:
+            print(f"Retrying API call in {retry_delay} seconds... (Attempt {attempt + 2}/{max_retries})")
+            await asyncio.sleep(retry_delay)
+
+    print("All attempts to connect to the Riot API have failed.")
+    return None
+
 
 """
-The following comment/documentation with the GatewayEventFilter class is a remnant of work done by a capstone team in spring 2024. We [the fall 2024] team made the decision to leave it
-commented-out since that's how it was left for us, but it could possibly be useful in the future.
+update_excel() is a function to update the Excel file / spreadsheet for offline database manipulation.
+This implementation (as of 2024-10-25) allows the bot host to update the database by simply altering the
+spreadsheet, and vice versa; changes through the bot / db update the spreadsheet at the specified path in .env.
 
-#Logger to catch discord disconects and ignores them.
-class GatewayEventFilter(logging.Filter):
-    def __init__(self) -> None:
-        super().__init__('discord.gateway')
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.exc_info is not None and is instance(record.exc_info[1], discord.ConnectionClosed):
-            return False
-        return True
+This function will work correctly regardless of whether users rename the template spreadsheet (called "PlayerStats.xlsx"), but do not change the sheet name inside it from "PlayerStats".
+In this code, the "workbook" is what we normally call a spreadsheet, and the "sheet name" is just a tab inside that spreadsheet.
+So, don't confuse the two and think that you can't change the spreadsheet's file name to something different; you can, as long as you leave the tab/sheet name unaltered and
+update the spreadsheet path in ".env".
+
 """
+
+def update_excel(discord_id, player_data):
+    try:
+        # Load the workbook and get the correct sheet
+        workbook = load_workbook(SPREADSHEET_PATH)
+        sheet_name = 'PlayerStats'
+        if sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+        else:
+            raise ValueError(f'Sheet {sheet_name} does not exist in the workbook')
+
+        # Check if the player already exists in the sheet
+        found = False
+        for row in sheet.iter_rows(min_row=2):  # Assuming the first row is headers
+            if str(row[0].value) == discord_id:  # Check if Discord ID matches
+                # Update only if there's a difference
+                for idx, key in enumerate(player_data.keys()):
+                    if row[idx].value != player_data[key]:
+                        row[idx].value = player_data[key]
+                        found = True
+                break
+
+        # If player not found, add a new row
+        if not found:
+            # Find the first truly empty row, ignoring formatting
+            empty_row_idx = sheet.max_row + 1
+            for i, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+                if all(cell.value is None for cell in row):
+                    empty_row_idx = i
+                    break
+
+            # Insert the new data into the empty row
+            for idx, key in enumerate(player_data.keys(), start=1):
+                sheet.cell(row=empty_row_idx, column=idx).value = player_data[key]
+
+        # Save the workbook after updates
+        workbook.save(SPREADSHEET_PATH)
+        print(f"Spreadsheet '{SPREADSHEET_PATH}' has been updated successfully.")
+
+    except Exception as e:
+        print(f"Error updating Excel file: {e}")
+        
+
+
+# Updated get_encrypted_summoner_id function
+async def get_encrypted_summoner_id(riot_id):
+    """
+    Fetches the encrypted summoner ID from the Riot API using Riot ID.
+    Args:
+    - riot_id: The player's Riot ID in 'username#tagline' format.
+    Returns:
+    - Encrypted summoner ID (summonerId) if successful, otherwise None.
+    """
+    # Riot ID is expected to be in the format 'username#tagline'
+    if '#' not in riot_id:
+        return None
+
+    username, tagline = riot_id.split('#', 1)
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{tagline}"
+    headers = {
+        "X-Riot-Token": RIOT_API_KEY
+    }
+
+    # Fetch PUUID using the safe API call function
+    data = await safe_api_call(url, headers)
+    if data:
+        puuid = data.get('puuid', None)
+        if puuid:
+            # Use the PUUID to fetch the encrypted summoner ID
+            summoner_url = f"https://na1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            summoner_data = await safe_api_call(summoner_url, headers)
+            if summoner_data:
+                return summoner_data.get('id', None)  # The summonerId is referred to as `id` in this response
+
+    return None
+
+
+"""
+    Fetches the player's rank from Riot API and updates it in the database.
+    Args:
+    - conn: The aiosqlite connection object.
+    - discord_id: The player's Discord ID.
+    - encrypted_summoner_id: The player's encrypted summoner ID.
+    - max_retries was added because sometimes the bot failed to connect to the Riot API and properly pull player rank etc (which was leading to rank showing as N/A in /stats.)
+      Now, the bot automatically retries the connection several times if this occurs.
+"""
+
+async def update_player_rank(conn, discord_id, encrypted_summoner_id):
+    await asyncio.sleep(3)  # Initial delay before making the API call
+
+    url = f"https://na1.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_summoner_id}"
+    headers = {
+        "X-Riot-Token": RIOT_API_KEY
+    }
+
+    max_retries = 3
+
+    for attempt in range(max_retries):
+        try:
+            async with api_semaphore:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        for entry in data:
+                            if entry.get("queueType") == "RANKED_SOLO_5x5":
+                                rank = entry.get('tier', 'N/A')
+                                await conn.execute(
+                                    "UPDATE PlayerStats SET PlayerRank = ? WHERE DiscordID = ?",
+                                    (rank, discord_id)
+                                )
+                                await conn.commit()
+                                return rank
+                        return "UNRANKED"
+                    else:
+                        print(f"Error fetching player rank: {response.status}, response: {await response.text()}")
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError, aiohttp.ClientPayloadError) as e:
+            print(f"An error occurred while connecting to the Riot API (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in 5 seconds (attempt {attempt + 1}/{max_retries})...")
+                await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+
+    print("All attempts to connect to the Riot API have failed.")
+    return "N/A"  # Return "N/A" if all attempts fail
         
 
 
@@ -281,18 +293,22 @@ This command pulls and displays some stats from the database, but also makes an 
 There is a known error where player rank may display as "N/A" on the command embed due to a connection issue, even if the API key is set up properly. However, typing the command a 1-2 more
 times resolves this.
 """
+# Command to display stats for a given user
 @tree.command(
     name='stats',
     description='Get inhouse stats for a server member who has connected their Riot account with /link.',
-    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+    guild=discord.Object(GUILD)
 )
-async def stats(interaction: discord.Interaction, player: discord.Member, sheet_name: str = "PlayerStats"):
+async def stats(interaction: discord.Interaction, player: discord.Member):
     # Check if player name is given
     if not player:
         await interaction.response.send_message("Please provide a player name.", ephemeral=True)
         return
 
     try:
+        # Defer the interaction response to prevent timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Update the player's Discord username in the database if needed
         await update_username(player)
 
@@ -329,7 +345,8 @@ async def stats(interaction: discord.Interaction, player: discord.Member, sheet_
                 embed.add_field(name="MVPs", value=player_stats[5], inline=True)
                 embed.add_field(name="Win Rate", value=f"{player_stats[8] * 100:.0f}%" if player_stats[8] is not None else "N/A", inline=True)
 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                # Send the embed as a follow-up response
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
                 # Prepare player data dictionary to pass to update_excel
                 player_data = {
@@ -347,17 +364,36 @@ async def stats(interaction: discord.Interaction, player: discord.Member, sheet_
                     "RolePreference": player_stats[12]
                 }
 
-                # Update the Excel sheet in a non-blocking manner
-                await asyncio.to_thread(update_excel, str(player.id), player_data, sheet_name)
+                
+                # Load the workbook and sheet
+                workbook = load_workbook(SPREADSHEET_PATH)
+                sheet = workbook.active  # Using the active sheet as the default
 
-                await interaction.followup.send(f"Player stats for {player.display_name} have been updated in the Excel sheet '{sheet_name}'.", ephemeral=True)
+                # Check if the player exists in the sheet and if updates are needed
+                found = False
+                needs_update = False
+                for row in sheet.iter_rows(min_row=2):  # Assuming the first row is headers
+                    if str(row[0].value) == player_data["DiscordID"]:
+                        # Compare each cell to see if an update is needed
+                        for key, cell in zip(player_data.keys(), row):
+                            if cell.value != player_data[key]:
+                                needs_update = True
+                                break
+                        found = True
+                        break
+
+                # If player is not found or an update is needed, update the Excel sheet
+                if not found or needs_update:
+                    await asyncio.to_thread(update_excel, str(player.id), player_data)
+                    await interaction.followup.send(f"Player stats for {player.display_name} have been updated in the Excel sheet.", ephemeral=True)
+
             else:
-                await interaction.response.send_message(f"No stats found for {player.display_name}", ephemeral=True)
+                await interaction.followup.send(f"No stats found for {player.display_name}", ephemeral=True)
 
     except Exception as e:
         # Log the error or handle it appropriately
         print(f"An error occurred: {e}")
-        await interaction.response.send_message("An unexpected error occurred while fetching player stats.", ephemeral=True)
+        await interaction.followup.send("An unexpected error occurred while fetching player stats.", ephemeral=True)
         
 
 # riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
@@ -616,23 +652,6 @@ async def update_win_rate(discord_id):
 # end of aforementioned code added by Jackson
 
 
-
-# preference weight for ranks in matchmaking
-def get_preference_weight(tier):
-    tier_weights = {
-        "UNRANKED": 0,
-        "IRON": 1,
-        "BRONZE": 2,
-        "SILVER": 3,
-        "GOLD": 4,
-        "PLATINUM": 5,
-        "EMERALD": 6,
-        "DIAMOND": 7,
-        "MASTER": 8,
-        "GRANDMASTER": 9,
-        "CHALLENGER": 10
-    }
-    return tier_weights.get(tier.upper(), 0)
 #Player class.
 class Player:
     def __init__(self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
@@ -644,17 +663,20 @@ class Player:
         self.mid_priority = mid_priority
         self.bot_priority = bot_priority
         self.support_priority = support_priority
-        self.weight = get_preference_weight(tier)
-
-    def __str__(self):
-        return f"Player: {self.username} (Tier {self.tier}), Weight: {self.weight}), Top: {self.top_priority}, Jungle: {self.jungle_priority}, Mid: {self.mid_priority}, Bot: {self.bot_priority}, Support: {self.support_priority}"
-
-    def set_roles(self, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
-        self.top_priority = top_priority
-        self.jungle_priority = jungle_priority
-        self.mid_priority = mid_priority
-        self.bot_priority = bot_priority
-        self.support_priority = support_priority
+        self.random_factor = random.uniform(0.9, 1.1)  # Random factor to slightly vary the player's weight for matchmaking
+        
+    def calculate_weight(self, tier_weight, role_preference_weight):
+        # Calculate weight based on tier, role preference, and a random factor
+        base_weight = self.tier * tier_weight + (
+            self.top_priority +
+            self.jungle_priority +
+            self.mid_priority +
+            self.bot_priority +
+            self.support_priority
+        ) * role_preference_weight
+        
+        return base_weight * self.random_factor  # Add randomness to the final weight
+        
 
 #Team class.
 class Team:
@@ -670,13 +692,6 @@ class Team:
               (Tier {self.jungle.tier})\nMid Laner: {self.mid_laner.username} priority: {self.mid_laner.mid_priority} (Tier {self.mid_laner.tier})\nBot Laner: {self.bot_laner.username} \
                   priority: {self.bot_laner.bot_priority} (Tier {self.bot_laner.tier})\nSupport: {self.support.username} priority: {self.support.support_priority} (Tier {self.support.tier})"
 
-def randomize_teams(players):
-    random.shuffle(players)
-    teams = []
-    for i in range(0, len(players), 5):
-        if i + 5 <= len(players):
-            team = Team(players[i], players[i+1], players[i+2], players[i+3], players[i+4])
-    return teams
 
 #Check-in button class for checking in to tournaments.
 class CheckinButtons(discord.ui.View):
@@ -790,39 +805,6 @@ class volunteerButtons(discord.ui.View):
         await interaction.followup.send('You have not volunteered to sit out, please volunteer to sit out first.', ephemeral = True)
         return "Did not check in yet"
 
-#Method to write values from a Google Sheets spreadsheet.
-def get_values_matchmaking(range_name):
-    creds = None
-    #Checks for the token.json authentication credentials that is created the first time accessing the spreadsheet.
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    #Checks for credentials, and if there are none or are not valid.
-    if not creds or not creds.valid:
-        #Checks if the credentials exist, have expired, and there is a refresh token.
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        #If none of the above exist, then it will check for the credentials file and check the permissions to access the Google Sheet spreadsheet.
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'src/credentials.json', SCOPES)
-            creds = flow.run_local_server(port = 0)
-        #Saves the credentials for every run after the first.
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    #Gets the values from the specified cells in the spreadsheet.
-    try:
-        service = build('sheets', 'v4', credentials = creds)
-        sheet = service.spreadsheets()
-        result = (
-            sheet.values()
-            .get(spreadsheetId = SHEETS_ID, range = range_name)
-            .execute()
-        )
-        values = result.get('values', [])
-        return values
-    except HttpError as error:
-        print(f'An error occured: {error}')
-        return error
     
 # Function to update Discord username in the database if it's been changed
 async def update_username(player: discord.Member):
@@ -950,12 +932,12 @@ async def checkin(interaction: discord.Interaction):
     view = CheckinButtons()
     await interaction.response.send_message('Check-in for the tournament has started! You have 15 minutes to check in.', view = view)
 
-#Command to start volunteer
+#Command to start check for volunteers to sit out of a match.
 @tree.command(
-    name = 'volunteer',
-    description = 'Initiate check for volunteers',
+    name = 'sitout',
+    description = 'Initiate check for volunteers to sit out from a match',
     guild = discord.Object(GUILD))
-async def volunteer(interaction: discord.Interaction):
+async def sitout(interaction: discord.Interaction):
     player = interaction.user
     
     # Upon volunteering to sit out for a round, update the player's Discord username in the database if it has been changed.
@@ -990,31 +972,60 @@ async def toxicity(interaction: discord.Interaction, member: discord.Member):
         await interaction.followup.send("An unexpected error occurred while updating toxicity points.", ephemeral=True)
 
 @tree.command(
-    name='wins',
-    description="Updates the number of wins for each player on a winning team.",
+    name='win',
+    description="Update the number of wins for each player on the winning team.",
     guild=discord.Object(GUILD)
 )
 @commands.has_permissions(administrator=True)
-async def wins(interaction: discord.Interaction, player_1: discord.Member, player_2: discord.Member, player_3: discord.Member, player_4: discord.Member, player_5: discord.Member):
+async def win(interaction: discord.Interaction, match_number: str, lobby_number: str, team: str):
     try:
-        winners = [player_1, player_2, player_3, player_4, player_5]
+        # Check if the team is either "red" or "blue"
+        if team.lower() not in ['red', 'blue']:
+            await interaction.response.send_message(
+                "Error: Please specify a valid team name (`red` or `blue`).",
+                ephemeral=True
+            )
+            return
+
+        # Ensure that the match and lobby exist by checking against the matchmaking result
+        match_key = f"match_{match_number}_lobby_{lobby_number}"
+        if match_key not in active_matches:
+            await interaction.response.send_message(
+                "Error: No match found. Please run `/matchmake` for this match and lobby first.",
+                ephemeral=True
+            )
+            return
+
+        # Get the winning team's players
+        winning_team = active_matches[match_key][team.lower()]
+
+        # Update wins for each player on the winning team
         await interaction.response.defer(ephemeral=True)
 
-        not_found_users = await check_winners_in_db(winners)
+        not_found_users = await check_winners_in_db(winning_team)
 
         if not_found_users:
-            missing_users = ", ".join([user.display_name for user in not_found_users])
-            await interaction.followup.send(f"The following players could not be found in the database, so no wins were updated: \n{missing_users}")
+            missing_users = ", ".join([user.username for user in not_found_users])
+            await interaction.followup.send(
+                f"The following players could not be found in the database, so no wins were updated: \n{missing_users}"
+            )
         else:
-            await update_wins(winners)
+            await update_wins(winning_team)
             await interaction.followup.send("All winners' 'win' points have been updated.")
 
     except commands.MissingPermissions:
-        await interaction.response.send_message("You do not have permission to use this command. Only administrators can update players' wins.", ephemeral=True)
+        await interaction.response.send_message(
+            "You do not have permission to use this command. Only administrators can update players' wins.",
+            ephemeral=True
+        )
 
     except Exception as e:
         print(f'An error occurred: {e}')
-        await interaction.followup.send("An error occurred while updating wins.", ephemeral=True)
+        await interaction.followup.send(
+            "An error occurred while updating wins.",
+            ephemeral=True
+        )
+
 
        
 # Slash command to remove all users from the Player and Volunteer roles.
@@ -1158,209 +1169,108 @@ async def points(interaction: discord.Interaction):
         print(f'An error occurred: {e}')
         await interaction.followup.send("An unexpected error occurred while updating participation points.", ephemeral=True)
 
+# Parse TIER_GROUPS from the .env file
+def parse_tier_groups(tier_groups_string):
+    tier_mapping = {}
+    groups = tier_groups_string.split(':')
+    for tier_index, group in enumerate(groups, start=1):
+        ranks = group.split(',')
+        for rank in ranks:
+            tier_mapping[rank.strip().upper()] = tier_index
+    return tier_mapping
+
+TIER_MAPPING = parse_tier_groups(TIER_GROUPS)
+active_matches = {}  # Global dictionary to store match and lobby data after `/matchmake`
 
 @tree.command(
-    name = 'matchmake',
-    description = "Form teams for all players enrolled in the game",
-    guild = discord.Object(GUILD))
-async def matchmake(interaction: discord.Interaction, match_number: str):
+    name='matchmake',
+    description="Form teams for all players enrolled in the game",
+    guild=discord.Object(GUILD)
+)
+async def matchmake(interaction: discord.Interaction, match_number: str, lobby_number: str):
     try:
-        #Finds all players in discord, adds them to a list
+        # Find all players in Discord who have the "Player" role
         player_users = []
-        player = get(interaction.guild.roles, name = 'Player')
+        player_role = get(interaction.guild.roles, name='Player')
         for user in interaction.guild.members:
-            if player in user.roles:
-                player_users.append(user.name)
-        
-        #Finds all volunteers in discord, adds them to a list
+            if player_role in user.roles:
+                player_users.append(user)
+
+        # Find all volunteers in Discord who have the "Volunteer" role
         volunteer_users = []
-        volunteer = get(interaction.guild.roles, name = 'Volunteer')
+        volunteer_role = get(interaction.guild.roles, name='Volunteer')
         for user in interaction.guild.members:
-            if volunteer in user.roles:
-                volunteer_users.append(user.name)
+            if volunteer_role in user.roles:
+                volunteer_users.append(user)
 
-        await interaction.response.defer()
-        await asyncio.sleep(8)
-        values = get_values_matchmaking('Player Tiers!A1:E100')
+        # Check if the number of players is valid for matchmaking
+        if len(player_users) % 10 != 0:
+            await interaction.response.send_message(
+                "Error: The number of players must be a multiple of 10.", ephemeral=True)
+            return
 
+        # Retrieve player stats from the database
         matched_players = []
-        for i, row in enumerate(values):
+        async with aiosqlite.connect(DB_PATH) as conn:
             for player in player_users:
-                if player.lower() == row[0].lower():
-                    top_prio = 5
-                    jg_prio = 5
-                    mid_prio = 5
-                    bot_prio = 5
-                    supp_prio = 5
-                    if row[3] == 'fill':
-                        top_prio = 1
-                        jg_prio = 1
-                        mid_prio = 1
-                        bot_prio = 1
-                        supp_prio = 1
-                    roles = row[3].split('/')
-                    index = 1
-                    for i, role in enumerate(roles):
-                        if role.lower() == 'top':
-                            top_prio = index
-                        if role.lower() == 'jg' or role.lower() == 'jung' or role.lower() == 'jungle':
-                            jg_prio = index
-                        if role.lower() == 'mid':
-                            mid_prio = index
-                        if role.lower() == 'bot' or role.lower() == 'adc':
-                            bot_prio = index
-                        if role.lower() == 'supp' or role.lower() == 'support':
-                            supp_prio = index
-                        index += 1
-                    matched_players.append(Player(tier=row[4],username=row[1],discord_id=row[0], top_priority=top_prio, jungle_priority=jg_prio, mid_priority=mid_prio, bot_priority=bot_prio, support_priority=supp_prio))
-        if len(matched_players) % 10!=0:
-            if len(matched_players)!=len(player_users):
-                await interaction.followup.send("Error: The number of players must be a multiple of 10. A player could also not be found in the spreadsheet.")
-                return
-            await interaction.followup.send("Error: The number of players must be a multiple of 10.")
+                async with conn.execute("SELECT DiscordID, PlayerRiotID, PlayerRank, PlayerTier, RolePreference FROM PlayerStats WHERE DiscordID = ?", (str(player.id),)) as cursor:
+                    player_data = await cursor.fetchone()
+                    if player_data:
+                        discord_id, riot_id, player_rank, player_tier, role_pref = player_data
+                        # Assign tier dynamically based on rank using TIER_MAPPING
+                        player_tier = TIER_MAPPING.get(player_rank.upper(), len(TIER_MAPPING) + 1)
+                        matched_players.append(Player(
+                            tier=player_tier,
+                            username=player.display_name,
+                            discord_id=discord_id,
+                            role_preference=role_pref
+                        ))
+
+        if len(matched_players) != len(player_users):
+            await interaction.response.send_message(
+                "Error: Some players are missing from the database.", ephemeral=True)
             return
-        if len(matched_players)!=len(player_users):
-            await interaction.followup.send('A player could not be found on the spreadsheet.')
-            return
+
+        # Create the best teams based on matchmaking criteria
         best_teams = await create_best_teams(matched_players)
 
-        embedLobby2 = None
-        embedLobby3 = None
-        for i, (team1, team2, team1_priority, team2_priority, diff) in enumerate(best_teams, start=1):
-            if i == 1:
-                embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
-                embedLobby1.add_field(name = 'Roles', value = '')
-                embedLobby1.add_field(name = 'Team 1', value = '')
-                embedLobby1.add_field(name = 'Team 2', value = '')
-                embedLobby1.add_field(name = '', value = 'Top Laner')
-                embedLobby1.add_field(name = '', value = team1.top_laner.username)
-                embedLobby1.add_field(name = '', value = team2.top_laner.username)
-                embedLobby1.add_field(name = '', value = 'Jungle')
-                embedLobby1.add_field(name = '', value = team1.jungle.username)
-                embedLobby1.add_field(name = '', value = team2.jungle.username)
-                embedLobby1.add_field(name = '', value = 'Mid Laner')
-                embedLobby1.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby1.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby1.add_field(name = '', value = 'Bot Laner')
-                embedLobby1.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby1.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby1.add_field(name = '', value = 'Support')
-                embedLobby1.add_field(name = '', value = team1.support.username)
-                embedLobby1.add_field(name = '', value = team2.support.username)
-            if i == 2:
-                embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
-                embedLobby2.add_field(name = 'Roles', value = '')
-                embedLobby2.add_field(name = 'Team 1', value = '')
-                embedLobby2.add_field(name = 'Team 2', value = '')
-                embedLobby2.add_field(name = '', value = 'Top Laner')
-                embedLobby2.add_field(name = '', value = team1.top_laner.username)
-                embedLobby2.add_field(name = '', value = team2.top_laner.username)
-                embedLobby2.add_field(name = '', value = 'Jungle')
-                embedLobby2.add_field(name = '', value = team1.jungle.username)
-                embedLobby2.add_field(name = '', value = team2.jungle.username)
-                embedLobby2.add_field(name = '', value = 'Mid Laner')
-                embedLobby2.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby2.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby2.add_field(name = '', value = 'Bot Laner')
-                embedLobby2.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby2.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby2.add_field(name = '', value = 'Support')
-                embedLobby2.add_field(name = '', value = team1.support.username)
-                embedLobby2.add_field(name = '', value = team2.support.username)
-            if i == 3:
-                embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
-                embedLobby3.add_field(name = 'Roles', value = '')
-                embedLobby3.add_field(name = 'Team 1', value = '')
-                embedLobby3.add_field(name = 'Team 2', value = '')
-                embedLobby3.add_field(name = '', value = 'Top Laner')
-                embedLobby3.add_field(name = '', value = team1.top_laner.username)
-                embedLobby3.add_field(name = '', value = team2.top_laner.username)
-                embedLobby3.add_field(name = '', value = 'Jungle')
-                embedLobby3.add_field(name = '', value = team1.jungle.username)
-                embedLobby3.add_field(name = '', value = team2.jungle.username)
-                embedLobby3.add_field(name = '', value = 'Mid Laner')
-                embedLobby3.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby3.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby3.add_field(name = '', value = 'Bot Laner')
-                embedLobby3.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby3.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby3.add_field(name = '', value = 'Support')
-                embedLobby3.add_field(name = '', value = team1.support.username)
-                embedLobby3.add_field(name = '', value = team2.support.username)
+        if not best_teams:
+            await interaction.response.send_message(
+                "Error: Unable to create balanced teams.", ephemeral=True)
+            return
 
-        #Embed to display all users who volunteered to sit out.
-        embedVol = discord.Embed(color = discord.Color.blurple(), title = 'Volunteers - Match: ' + match_number)
-        for vol in volunteer_users:
-            embedVol.add_field(name = '', value = vol)
-        if not volunteer_users:
-            embedVol.add_field(name = '', value = 'No volunteers.')
+        # Prepare embeds for teams and volunteers
+        embed_lobby = discord.Embed(color=discord.Color.from_rgb(255, 198, 41), title=f'Lobby {lobby_number} - Match: {match_number}')
+        embed_lobby.add_field(name='Roles', value='Top\nJungle\nMid\nBot\nSupport', inline=True)
+        embed_lobby.add_field(name='Red Team', value='\n'.join(player.username for player in best_teams[0].red_team), inline=True)
+        embed_lobby.add_field(name='Blue Team', value='\n'.join(player.username for player in best_teams[0].blue_team), inline=True)
 
-        if embedLobby2 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1])
-        elif embedLobby2 == None and not volunteer_users:
-            await interaction.followup.send( embeds = embedLobby1)
-        elif embedLobby3 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2])
-        elif embedLobby3 == None and not volunteer_users:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2])
-        elif volunteer_users == None:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2, embedLobby3])
+        embed_volunteers = discord.Embed(color=discord.Color.blurple(), title=f'Volunteers - Match: {match_number}')
+        if volunteer_users:
+            embed_volunteers.add_field(name='', value='\n'.join(vol.display_name for vol in volunteer_users))
         else:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
-        
+            embed_volunteers.add_field(name='', value='No volunteers.')
+
+        # Send the embeds
+        await interaction.response.send_message(embeds=[embed_lobby, embed_volunteers])
+
+        # Store the match and lobby information for later reference in `/win`
+        match_key = f"match_{match_number}_lobby_{lobby_number}"
+        active_matches[match_key] = {
+            'red': best_teams[0].red_team,
+            'blue': best_teams[0].blue_team
+        }
+
     except Exception as e:
-        print(f'An error occured: {e}')
+        print(f'An error occurred: {e}')
+        await interaction.response.send_message(
+            "An unexpected error occurred while forming teams.", ephemeral=True
+        )
 
-#creates 2 best team (1 match) which has the lowest score
-async def create_best_teams_helper(players):
-    if len(players) != 10:
-        raise ValueError("The length of players should be exactly 10.")
-
-    lowest_score = float('inf')
-    lowest_score_teams = []
-
-    for team1_players in itertools.permutations(players, len(players) // 2):
-        team1 = Team(*team1_players)
-        team2_players = [player for player in players if player not in team1_players]
-        for team2_players_permutations in itertools.permutations(team2_players, len(players) // 2):
-            team2 = Team(*team2_players_permutations)
-
-            t1_priority=0
-            t1_priority+=team1.top_laner.top_priority**2
-            t1_priority+=team1.jungle.jungle_priority**2
-            t1_priority+=team1.mid_laner.mid_priority**2
-            t1_priority+=team1.bot_laner.bot_priority**2
-            t1_priority+=team1.support.support_priority**2
-        
-            t2_priority=0
-            t2_priority+=team2.top_laner.top_priority**2
-            t2_priority+=team2.jungle.jungle_priority**2
-            t2_priority+=team2.mid_laner.mid_priority**2
-            t2_priority+=team2.bot_laner.bot_priority**2
-            t2_priority+=team2.support.support_priority**2
-            
-            diff = (int(team1.top_laner.tier) - int(team2.top_laner.tier)) ** 2 + \
-            (int(team1.mid_laner.tier) - int(team2.mid_laner.tier)) ** 2 + \
-            (int(team1.bot_laner.tier) - int(team2.bot_laner.tier)) ** 2 + \
-            (int(team1.jungle.tier) - int(team2.jungle.tier)) ** 2 + \
-            (int(team1.support.tier) - int(team2.support.tier)) ** 2
-            
-            score = (t1_priority + t2_priority) / 2.5 + diff
-
-            if score < lowest_score:
-                lowest_score = score
-                lowest_score_teams = [(team1, team2, t1_priority, t2_priority, diff)]
-            
-            #This can be kept if we want to return multiple games of the same score.
-            #elif score == lowest_score:
-            #lowest_score_teams.append((team1, team2, team1_priority, team2_priority, diff))
-
-    return lowest_score_teams
-
-#creates best matches for all players
 async def create_best_teams(players):
-    if len(players)%10!=0:
-        return 'Only call this method with 10, 20 30, etc players'
+    if len(players) % 10 != 0:
+        return None
+
     sorted_players = sorted(players, key=lambda x: x.tier)
     group_size = 10
     num_groups = (len(sorted_players) + group_size - 1) // group_size
@@ -1368,28 +1278,88 @@ async def create_best_teams(players):
 
     for i in range(num_groups):
         group = sorted_players[i * group_size: (i + 1) * group_size]
-        best_teams.extend(await create_best_teams_helper(group))
+        if len(group) == group_size:
+            teams = await create_best_teams_helper(group)
+            if teams:
+                best_teams.extend(teams)
 
     return best_teams
 
-#calculates the role priorities for all players any given team
-async def calculate_team_priority(top,jungle,mid,bot,support):
-    priority=0
-    priority+=top.top_priority**2
-    priority+=jungle.jungle_priority**2
-    priority+=mid.mid_priority**2
-    priority+=bot.bot_priority**2
-    priority+=support.support_priority**2
+async def create_randomized_teams(players):
+    # Randomly shuffle players to introduce randomness in the matchmaking
+    random.shuffle(players)
+    
+    # Split players into groups of 10 to form teams
+    group_size = 10
+    num_groups = len(players) // group_size
+    teams = []
+
+    for i in range(num_groups):
+        group = players[i * group_size: (i + 1) * group_size]
+        
+        # Generate balanced teams with added randomness
+        best_team = await create_best_teams_helper(group)
+        if best_team:
+            teams.append(best_team)
+
+    return teams
+
+
+
+async def create_best_teams_helper(players):
+    if len(players) != 10:
+        return None
+
+    lowest_score = float('inf')
+    best_team = None
+
+    # Randomize permutations to create different results for the same set of players
+    permutations = list(itertools.permutations(players, 5))
+    random.shuffle(permutations)
+
+    for team1_players in permutations:
+        team1 = list(team1_players)
+        team2 = [player for player in players if player not in team1]
+
+        # Calculate score difference with some randomness
+        score_diff = await calculate_score_diff(Team(*team1), Team(*team2), tier_weight=TIER_WEIGHT)
+
+        # Calculate team priorities with randomness
+        team1_priority = await calculate_team_priority(*team1, role_preference_weight=ROLE_PREFERENCE_WEIGHT)
+        team2_priority = await calculate_team_priority(*team2, role_preference_weight=ROLE_PREFERENCE_WEIGHT)
+
+        total_score = score_diff * TIER_WEIGHT + (team1_priority + team2_priority) * ROLE_PREFERENCE_WEIGHT
+
+        if total_score < lowest_score:
+            lowest_score = total_score
+            best_team = Team(team1, team2)
+
+    return best_team
+
+
+
+async def calculate_team_priority(top, jungle, mid, bot, support):
+    # Calculating the total priority score for the team by adding the squares of each player's role priority.
+    # The lower the number, the closer the players are to their most preferred roles.
+    priority = 0
+    priority += top.top_priority ** 2
+    priority += jungle.jungle_priority ** 2
+    priority += mid.mid_priority ** 2
+    priority += bot.bot_priority ** 2
+    priority += support.support_priority ** 2
     return priority
 
-#calculates the score difference in tier for any 2 given teams
+
+#calculates the score difference in tier for any 2 given teams (i.e. how well it's balanced with regard to tier)
 async def calculate_score_diff(team1, team2):
+    # Calculating the tier score difference for each role between two teams.
     diff = (team1.top_laner.tier - team2.top_laner.tier) ** 2 + \
-                     (team1.mid_laner.tier - team2.mid_laner.tier) ** 2 + \
-                     (team1.bot_laner.tier - team2.bot_laner.tier) ** 2 + \
-                     (team1.jungle.tier - team2.jungle.tier) ** 2 + \
-                     (team1.support.tier - team2.support.tier) ** 2
+           (team1.mid_laner.tier - team2.mid_laner.tier) ** 2 + \
+           (team1.bot_laner.tier - team2.bot_laner.tier) ** 2 + \
+           (team1.jungle.tier - team2.jungle.tier) ** 2 + \
+           (team1.support.tier - team2.support.tier) ** 2
     return diff
+
 
 def has_roles(team, required_roles):
     # Create a set of roles present in the team
@@ -1400,25 +1370,15 @@ def has_roles(team, required_roles):
 def get_roles(role_string):
     role_priorities = {'top': 5, 'jungle': 5, 'mid': 5, 'bot': 5, 'support': 5}
     if role_string == 'fill':
-        return {role: 1 for role in role_priorities}
+        return {role: random.randint(1, 2) for role in role_priorities}  # Random preference for fill players
+
     roles = role_string.split('/')
     for index, role in enumerate(roles, start=1):
         if role.lower() in role_priorities:
-            role_priorities[role.lower()] = index
+            role_priorities[role.lower()] = max(1, index + random.randint(-1, 1))  # Randomize preference within range
     return role_priorities
-# Synergy score based on roles
-def calculate_synergy(team):
-    if has_roles(team, ["top", "jungle", "mid", "bot", "support"]):
-        return 10  # Higher synergy score
-    else:
-        return 5  # Lower score for less balanced teams
-# Keep a history of team matchups
-def calculate_repetition_penalty(team1, team2, previous_matches):
-    penalty = 0
-    for match in previous_matches:
-        if set(team1.players) == set(match.team1.players) or set(team2.players) == set(match.team2.players):
-            penalty += 10  # Add a penalty for repetition
-    return penalty
+
+
 
 
 
@@ -1435,55 +1395,6 @@ def group_players_by_rank(players):
         tier_groups[player.tier].append(player)
     
     return tier_groups
-# Shuffle players within each rank group
-def shuffle_players_within_tier_groups(tier_groups):
-    for tier in tier_groups:
-        random.shuffle(tier_groups[tier])
-    return tier_groups
-# Relax rank restriction by borrowing players from nearby ranks
-def balance_tier_groups(tier_groups):
-    balanced_groups = []
-    remaining_players = []
-
-    # Combine players from adjacent ranks if necessary
-    for tier, players in tier_groups.items():
-        if len(players) % 10 != 0:
-            remaining_players.extend(players)
-        else:
-            balanced_groups.append(players)
-
-    # If there are leftover players, merge them into nearby groups
-    for i in range(0, len(remaining_players), 10):
-        group = remaining_players[i:i+10]
-        if len(group) == 10:
-            balanced_groups.append(group)
-        else:
-            # Handle edge cases, add these players to nearby tiers
-            # Or combine them into a custom group
-            pass
-    
-    return balanced_groups
-async def create_random_teams_within_ranks(players):
-    # Group players by rank
-    tier_groups = group_players_by_rank(players)
-    
-    # Shuffle players within each tier group for randomization
-    tier_groups = shuffle_players_within_tier_groups(tier_groups)
-    
-    # Balance the tier groups to make sure each group has a multiple of 10 players
-    balanced_groups = balance_tier_groups(tier_groups)
-
-    # Now create best teams using random players from each balanced group
-    best_teams = []
-    for group in balanced_groups:
-        if len(group) == 10:
-            best_teams.extend(await create_best_teams_helper(group))
-        else:
-            # Handle incomplete groups or relax rules
-            pass
-    
-    return best_teams
-# end of Daniel's randomization code
 
 
 
@@ -1608,32 +1519,6 @@ async def votemvp(interaction: discord.Interaction, player: discord.Member):
         print(f"An error occurred: {e}")
         await interaction.response.send_message("An unexpected error occurred while processing your vote.", ephemeral=True)
 
-@tree.command(
-    name='viewvotes',
-    description='View the current MVP votes for the ongoing voting session.',
-    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
-)
-async def viewvotes(interaction: discord.Interaction):
-    global voting_in_progress
-    if not voting_in_progress:
-        await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
-        return
-
-    # Create an embed to show the current votes
-    embed = discord.Embed(title="🗳️ MVP Votes", color=0xffc629)
-
-    # Add a field for each player who has received votes
-    for player, count in votes.items():
-        voters = [name for name in votes if votes[name] == count]
-        voters_list = ', '.join(voters) if voters else "No votes yet"
-        embed.add_field(name=player, value=f"Votes: {count}\n{voters_list}", inline=False)
-    
-    # Calculate remaining time in voting session
-    remaining_time = start_voting.next_iteration - discord.utils.utcnow()
-    minutes, seconds = divmod(int(remaining_time.total_seconds()), 60)
-    embed.set_footer(text=f"Time remaining: {minutes} minutes and {seconds} seconds")
-
-    await interaction.response.send_message(embed=embed, ephemeral=False)
 
 
 # Admin command to cancel the voting session
@@ -1762,6 +1647,74 @@ async def help_command(interaction: discord.Interaction):
 
 
 
+# The following commented-out line was left by the Spring 2024 capstone team, and though our fall 2024 version does not use it this may be useful for future groups.
 #logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
-#starts the bot
-client.run(TOKEN)
+
+
+
+        
+# Shutdown of aiohttp session
+async def close_session():
+    global session
+    if session is not None:
+        await session.close()
+        print("HTTP session has been closed.")
+
+# Entry point to run async setup before bot starts
+if __name__ == '__main__':
+    try:
+        # This line of code starts the bot.
+        client.run(TOKEN)
+    finally:
+        asyncio.run(close_session())
+        
+        
+        
+
+"""
+UNUSED / LEFTOVER CODE
+
+
+The following code with the GatewayEventFilter class is a remnant of work done by a capstone team in spring 2024. We [the fall 2024] team made the decision to leave it
+commented-out since that's how it was left for us, but it could possibly be useful in the future.
+
+#Logger to catch discord disconects and ignores them.
+class GatewayEventFilter(logging.Filter):
+    def __init__(self) -> None:
+        super().__init__('discord.gateway')
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info is not None and is instance(record.exc_info[1], discord.ConnectionClosed):
+            return False
+        return True
+
+
+The following is for a command, /viewvotes, that displayed an embed to users showing the number of votes for each MVP candidate. It was removed at the request of the sponsor
+to prevent vote manipulation or a "bandwagon effect", and if it were re-added it may not work with the final version of MVP functionality submitted in the fall 2024 semester.
+
+@tree.command(
+    name='viewvotes',
+    description='View the current MVP votes for the ongoing voting session.',
+    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+)
+async def viewvotes(interaction: discord.Interaction):
+    global voting_in_progress
+    if not voting_in_progress:
+        await interaction.response.send_message("No voting session is currently active.", ephemeral=True)
+        return
+
+    # Create an embed to show the current votes
+    embed = discord.Embed(title="🗳️ MVP Votes", color=0xffc629)
+
+    # Add a field for each player who has received votes
+    for player, count in votes.items():
+        voters = [name for name in votes if votes[name] == count]
+        voters_list = ', '.join(voters) if voters else "No votes yet"
+        embed.add_field(name=player, value=f"Votes: {count}\n{voters_list}", inline=False)
+    
+    # Calculate remaining time in voting session
+    remaining_time = start_voting.next_iteration - discord.utils.utcnow()
+    minutes, seconds = divmod(int(remaining_time.total_seconds()), 60)
+    embed.set_footer(text=f"Time remaining: {minutes} minutes and {seconds} seconds")
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+"""
