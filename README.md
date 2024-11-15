@@ -29,7 +29,7 @@ Open the Discord client, and under the “Advanced” settings tab, make sure �
 
 We have two template files - "PlayerStats.xlsx" and "main_db.db" - included in this repository. **If you are planning to make changes to the bot after use, make sure you change these files' names** or edit .gitignore, otherwise you may inadvertently upload files containing user data.
 
-Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So the relevant lines of `.env` would look like this:
+Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So the relevant lines of `.env` would look like this if you don't change the templates' names or locations:
 
 `SPREADSHEET_PATH=PlayerStats.xlsx`
 
