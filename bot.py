@@ -11,13 +11,7 @@ from openpyxl import load_workbook
 import os
 import logging
 import random
-import requests
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from dotenv import load_dotenv, find_dotenv
 from discord import app_commands
 from discord.utils import get
@@ -40,12 +34,12 @@ DB_PATH = os.getenv('DB_PATH')
 
 # SQLite connection
 async def get_db_connection():
-    return await aiosqlite.connect('ksu_esports_bot.db') # POSSIBLY CHANGE THIS TO USE 'DB_PATH' FROM .env LATER
+    return await aiosqlite.connect(DB_PATH)
 
 # Function to update the Excel file / spreadsheet for offline database manipulation.
 # This implementation (as of 2024-10-25) allows the bot host to update the database by simply altering the
 # spreadsheet, and vice versa; changes through the bot / db update the spreadsheet at the specified path in .env.
-# Niranjanaa:
+
 from openpyxl import load_workbook
 
 def update_excel(discord_id, player_data, sheet_name):
@@ -239,15 +233,47 @@ async def on_ready():
     await initialize_database()
     await tree.sync(guild=discord.Object(GUILD))
     print(f'Logged in as {client.user}')
+    
+    # Get the guild object
+    guild = discord.utils.get(client.guilds, id=int(GUILD))
+    if guild is None:
+        print(f'Guild with ID {GUILD} not found.')
+        return
 
-"""#Logger to catch discord disconects and ignores them.
+    # Get bot's role and the roles for Player and Volunteer
+    bot_role = discord.utils.get(guild.roles, name=client.user.name)
+    player_role = discord.utils.get(guild.roles, name='Player')
+    volunteer_role = discord.utils.get(guild.roles, name='Volunteer')
+
+    # Create Player role if it doesn't exist
+    if player_role is None:
+        player_role = await guild.create_role(name='Player', mentionable=True)
+    
+    # Create Volunteer role if it doesn't exist
+    if volunteer_role is None:
+        volunteer_role = await guild.create_role(name='Volunteer', mentionable=True)
+
+    # Adjust Player and Volunteer roles to be below the bot role, if possible
+    if bot_role is not None:
+        new_position = max(bot_role.position - 1, 1)  # Ensure the new position is greater than 0
+        await player_role.edit(position=new_position)
+        await volunteer_role.edit(position=new_position)
+
+"""
+The following comment/documentation with the GatewayEventFilter class is a remnant of work done by a capstone team in spring 2024. We [the fall 2024] team made the decision to leave it
+commented-out since that's how it was left for us, but it could possibly be useful in the future.
+
+#Logger to catch discord disconects and ignores them.
 class GatewayEventFilter(logging.Filter):
     def __init__(self) -> None:
         super().__init__('discord.gateway')
     def filter(self, record: logging.LogRecord) -> bool:
         if record.exc_info is not None and is instance(record.exc_info[1], discord.ConnectionClosed):
             return False
-        return True"""
+        return True
+"""
+        
+
 
 """
 Command to display stats for a given user which simultaneously syncs the user's stats from the database to a spreadsheet (specified in .env) for easy viewing.0

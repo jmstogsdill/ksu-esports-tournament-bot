@@ -3,3 +3,13 @@ __pycache__
 *.pyo
 *.pyd
 .env
+
+
+token.json
+*.db
+!main_db.db
+
+*.xlsx
+!PlayerStats.xlsx
+
+Documentation/

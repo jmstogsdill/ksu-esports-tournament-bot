@@ -31,9 +31,9 @@ We have two template files - "PlayerStats.xlsx" and "main_db.db" - included in t
 
 Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So these two lines would look like this:
 
-`SPREADSHEET_PATH= PlayerStats.xlsx`
+`SPREADSHEET_PATH=PlayerStats.xlsx`
 
-`DB_PATH= main_db.db`
+`DB_PATH=main_db.db`
 
 # Setting up Riot API key
 
@@ -46,17 +46,30 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 `pip3 install -r requirements.txt`
 
+*Note: if you want to run a containerized version of the bot using Docker, skip this step and [see our instructions for Docker setup](#Running the bot using Docker)* once you've populated the `.env` file with values and added the bot to your server.
+
 # Adding the Discord bot to your server
 
 Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Manage Roles” under General Permissions. Note that the permissions required by the bot are likely to change in future versions, and this may need to be revised.
 
 Selecting just the “Administrator” permission will prevent any permissions-related issues from occurring with the bot, though granting this permission is generally not considered best practice. Below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
 
-You should also go in your Discord server settings and create “Player” and “Volunteer” roles, or the bot will not function once run (future versions should create these roles automatically).
-
-# Finishing setup
+# Running the bot
 
 Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. Depending on your installation you may also be able to run it by simply double-clicking the bot.py file. If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client.
+
+# Running the bot using Docker
+
+**This section is a work-in-progress.** Our repository contains a functional Dockerfile, and once users with Docker with installed have followed all other steps (i.e. populated .env and added their bot to a server) they should be able to run a containerized version of the bot.
+
+This is done by running the following commands in a terminal, which create a Docker image and Docker image container:
+
+`docker build -t ksu-esports-bot .`
+
+`docker run -d --name ksu-esports-bot-container --env-file .env ksu-esports-bot`
+
+However, this functionality has undergone extremely limited testing, only using the "Docker Desktop" (AMD64) application installed on a machine running Windows 10. Any functionality beyond running the bot and having it log in to Discord are untested, and extensive alterations may be required for the bot to function fully with Docker.
+
 
 
 # Recommendations for Futher Development
@@ -65,4 +78,4 @@ The following is a list of recommendations by our team for future capstone stude
 
 - Screenshots can be included in a GitHub repository and embedded in README.md, simplifying the bot setup process
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
-- Finish implementation of Docker support to provide a convenient alternative to normal setup. Attempting to use the current Dockerfile included in this repository fails, seemingly because one of our dependencies in requirements.txt utilizes another library that isn't included in Python 3.12.6. However, we have been unable to determine what this library is.
+- Finish implementation of Docker support to provide a convenient and more portable alternative to normal setup.
