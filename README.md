@@ -46,7 +46,7 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 `pip3 install -r requirements.txt`
 
-*Note: if you want to run a containerized version of the bot using Docker, skip this step and [see our instructions for Docker setup](#Running the bot using Docker)* once you've populated the `.env` file with values and added the bot to your server.
+*Note: if you want to run a containerized version of the bot using Docker, skip this step and [see our instructions for Docker setup](# Running the bot using Docker)* once you've populated the `.env` file with values and added the bot to your server.
 
 # Adding the Discord bot to your server
 
