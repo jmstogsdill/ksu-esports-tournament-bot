@@ -2,6 +2,7 @@ import aiohttp
 import aiosqlite # Using this package instead of sqlite for asynchronous processing support
 import asyncio
 from collections import defaultdict
+from datetime import datetime, timedelta
 import discord
 from discord import AllowedMentions, app_commands
 from discord.ext import commands, tasks
@@ -479,7 +480,7 @@ async def link(interaction: discord.Interaction, riot_id: str):
 @tree.command(
     name='unlink',
     description="Unlink a player's Riot ID and remove their statistics from the database.",
-    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+    guild=discord.Object(GUILD) 
 )
 @commands.has_permissions(administrator=True)
 async def unlink(interaction: discord.Interaction, player: discord.Member):
@@ -500,7 +501,7 @@ async def unlink(interaction: discord.Interaction, player: discord.Member):
 @tree.command(
     name='confirm',
     description="Confirm the removal of a player's statistics from the database.",
-    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+    guild=discord.Object(GUILD)
 )
 @commands.has_permissions(administrator=True)
 async def confirm(interaction: discord.Interaction):
@@ -532,6 +533,64 @@ async def confirm(interaction: discord.Interaction):
         await interaction.response.send_message("An unexpected error occurred while confirming the unlinking of the account.", ephemeral=True)
 
 
+@tree.command(
+    name='resetdb',
+    description="Reset player data to defaults, except for ID/rank/role preference information.",
+    guild=discord.Object(GUILD)
+)
+async def resetdb(interaction: discord.Interaction):
+    # Only the server owner can use this command
+    if interaction.user != interaction.guild.owner:
+        await interaction.response.send_message(
+            "You do not have permission to use this command. Only the server owner can reset the database.",
+            ephemeral=True
+        )
+        return
+
+    # Send confirmation message to the server owner
+    await interaction.response.send_message(
+        "You are about to reset the player database to default values for participation, wins, MVPs, toxicity points, games played, win rate, and total points (excluding rank, tier, and role preferences). "
+        "Please type /resetdb again within the next 10 seconds to confirm.",
+        ephemeral=True
+    )
+
+    def check(res: discord.Interaction):
+        # Check if the command is resetdb and if it's the same user who issued the original command
+        return res.command.name == 'resetdb' and res.user == interaction.user
+
+    try:
+        # Wait for the confirmation within 10 seconds
+        response = await client.wait_for('interaction', timeout=10.0, check=check)
+
+        # If the confirmation is received, proceed with resetting the database
+        async with aiosqlite.connect(DB_PATH) as conn:
+            await conn.execute("""
+                UPDATE PlayerStats
+                SET
+                    Participation = 0,
+                    Wins = 0,
+                    MVPs = 0,
+                    ToxicityPoints = 0,
+                    GamesPlayed = 0,
+                    WinRate = NULL,
+                    TotalPoints = 0
+            """)
+            await conn.commit()
+
+        # Send a follow-up message indicating the reset was successful
+        await response.followup.send(
+            "The player database has been successfully reset to default values, excluding rank, tier, and role preferences.",
+            ephemeral=True
+        )
+
+    except asyncio.TimeoutError:
+        # If no confirmation is received within 10 seconds, send a follow-up message indicating timeout
+        await interaction.followup.send(
+            "Reset confirmation timed out. Please type /resetdb again if you still wish to reset the database.",
+            ephemeral=True
+        )
+
+        
 
 # Role preference command
 class RolePreferenceView(discord.ui.View):
@@ -1367,22 +1426,7 @@ def has_roles(team, required_roles):
     # Check if all required roles are in the team_roles set
     return all(role in team_roles for role in required_roles)
 
-def get_roles(role_string):
-    role_priorities = {'top': 5, 'jungle': 5, 'mid': 5, 'bot': 5, 'support': 5}
-    if role_string == 'fill':
-        return {role: random.randint(1, 2) for role in role_priorities}  # Random preference for fill players
 
-    roles = role_string.split('/')
-    for index, role in enumerate(roles, start=1):
-        if role.lower() in role_priorities:
-            role_priorities[role.lower()] = max(1, index + random.randint(-1, 1))  # Randomize preference within range
-    return role_priorities
-
-
-
-
-
-# Below: some randomization code Daniel was messing around with
 
 # Group players by tier (or nearby tiers)
 def group_players_by_rank(players):
@@ -1602,18 +1646,74 @@ async def finish_voting(interaction):
 )
 async def help_command(interaction: discord.Interaction):
     pages = [
-        discord.Embed(title="Help - Page 1", description="**/link [riot_id]** - Link your Riot ID to your Discord account."),
-        discord.Embed(title="Help - Page 2", description="**/rolepreference** - Set your role preferences for matchmaking."),
-        discord.Embed(title="Help - Page 3", description="**/checkin** - Initiate tournament check-in."),
-        discord.Embed(title="Help - Page 4", description="**/volunteer** - Volunteer to sit out of the current match."),
-        discord.Embed(title="Help - Page 5", description="**/wins [player_1] [player_2] [player_3] [player_4] [player_5]** - Add a win for the specified players."),
-        discord.Embed(title="Help - Page 6", description="**/toxicity [discord_username]** - Give a user a point of toxicity."),
-        discord.Embed(title="Help - Page 7", description="**/clear** - Remove all users from Player and Volunteer roles."),
-        discord.Embed(title="Help - Page 8", description="**/players** - Find all players and volunteers currently enrolled in the game."),
-        discord.Embed(title="Help - Page 9", description="**/points** - Update participation points in the spreadsheet."),
-        discord.Embed(title="Help - Page 10", description="**/matchmake [match_number]** - Form teams for all players enrolled in the game."),
-        discord.Embed(title="Help - Page 11", description="**/votemvp [username]** - Vote for the MVP of your match."),
+        discord.Embed(
+            title="Help Menu 📚",
+            color=0xffc629
+        ).add_field(
+            name="/help",
+            value="Displays documentation on all bot commands.",
+            inline=False
+        ).add_field(
+            name="/link [riot_id]",
+            value="Link your Riot ID to your Discord account. Users are required to type this command before any others except /help.",
+            inline=False
+        ).add_field(
+            name="/rolepreference",
+            value="Set your role preferences for matchmaking.",
+            inline=False
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            color=0xffc629
+        ).add_field(
+            name="/checkin",
+            value="Initiate tournament check-in.",
+            inline=False
+        ).add_field(
+            name="sitout",
+            value="Volunteer to sit out of the current match..",
+            inline=False
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/wins [player_1] [player_2] [player_3] [player_4] [player_5]** - Add a win for the specified players.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/toxicity [discord_username]** - Give a user a point of toxicity.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/clear** - Remove all users from Player and Volunteer roles.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/players** - Find all players and volunteers currently enrolled in the game.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/points** - Update participation points in the spreadsheet.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/matchmake [match_number]** - Form teams for all players enrolled in the game.",
+            color=0xffc629
+        ),
+        discord.Embed(
+            title="Help Menu 📚",
+            description="**/votemvp [username]** - Vote for the MVP of your match.",
+            color=0xffc629
+        ),
     ]
+
+    # Set the footer for each page
+    for i, page in enumerate(pages, start=1):
+        page.set_footer(text=f"Page {i} of {len(pages)}")
 
     current_page = 0
 
@@ -1623,32 +1723,26 @@ async def help_command(interaction: discord.Interaction):
             self.message = None
 
         async def update_message(self, interaction: discord.Interaction):
-            await interaction.response.defer()  # Defer the response to prevent timeout error
+            await interaction.response.defer()  # Defer response to prevent timeout error
             if self.message:
                 await self.message.edit(embed=pages[current_page], view=self)
 
         @discord.ui.button(label="Previous", style=discord.ButtonStyle.primary)
         async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             nonlocal current_page
-            if current_page > 0:
-                current_page -= 1
-                await self.update_message(interaction)
+            current_page = (current_page - 1) % len(pages)  # Loop back to last page if on the first page
+            await self.update_message(interaction)
 
         @discord.ui.button(label="Next", style=discord.ButtonStyle.primary)
         async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
             nonlocal current_page
-            if current_page < len(pages) - 1:
-                current_page += 1
-                await self.update_message(interaction)
+            current_page = (current_page + 1) % len(pages)  # Loop back to first page if on the last page
+            await self.update_message(interaction)
 
     view = HelpView()
-    initial_response = await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
-    view.message = await initial_response
+    await interaction.response.send_message(embed=pages[current_page], view=view, ephemeral=True)
+    view.message = await interaction.original_response()
 
-
-
-# The following commented-out line was left by the Spring 2024 capstone team, and though our fall 2024 version does not use it this may be useful for future groups.
-#logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
 
 
 
@@ -1687,6 +1781,9 @@ class GatewayEventFilter(logging.Filter):
             return False
         return True
 
+# The following commented-out line was left by the Spring 2024 capstone team, and though our fall 2024 version does not use it this may be useful for future groups.
+#logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
+
 
 The following is for a command, /viewvotes, that displayed an embed to users showing the number of votes for each MVP candidate. It was removed at the request of the sponsor
 to prevent vote manipulation or a "bandwagon effect", and if it were re-added it may not work with the final version of MVP functionality submitted in the fall 2024 semester.
@@ -1694,7 +1791,7 @@ to prevent vote manipulation or a "bandwagon effect", and if it were re-added it
 @tree.command(
     name='viewvotes',
     description='View the current MVP votes for the ongoing voting session.',
-    guild=discord.Object(GUILD)  # Replace GUILD with your actual guild ID
+    guild=discord.Object(GUILD) 
 )
 async def viewvotes(interaction: discord.Interaction):
     global voting_in_progress
