@@ -46,7 +46,9 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 `pip3 install -r requirements.txt`
 
-*Note: if you want to run a containerized version of the bot using Docker, skip this step and see [our instructions for Docker setup](#docker-support)* once you've populated the `.env` file with values and added the bot to your server.
+
+
+*Note: if you want to run a containerized version of the bot using Docker, skip this step and see [our instructions for Docker setup](#docker-support) once you've populated the `.env` file with values and added the bot to your server.*
 
 # Adding the Discord bot to your server
 
@@ -60,7 +62,7 @@ Open a command prompt window in the same directory as bot.py, and type either `p
 
 # Docker Support
 
-***[Note: Docker support for this bot is largely untested and major functionality may be unusable at present.](#recommendations-for-further-development)***
+*[Note: Docker support for this bot is largely untested and major functionality may be unusable at present.](#recommendations-for-further-development)*
 
 Our repository contains a functional Dockerfile, and once users with Docker with installed have followed all other steps (i.e. populated .env and added their bot to a server) they should be able to run a containerized version of the bot.
 
@@ -70,7 +72,7 @@ This is done by running the following commands in a terminal, which create a Doc
 
 `docker run -d --name ksu-esports-bot-container --env-file .env ksu-esports-bot`
 
-However, this functionality has undergone very limited testing, using only the "Docker Desktop" (AMD64) application installed on a machine running Windows 10. Any functionality beyond running the bot and having it log in to Discord are untested, and extensive alterations may be required for the bot to function fully with Docker.
+However, this functionality has undergone very limited testing, using only the "Docker Desktop" (AMD64) application installed on a machine running Windows 10. Any functionality beyond running the containerized bot and having it log in to Discord are untested, and extensive alterations may be required for the bot to function fully with Docker.
 
 
 
@@ -78,6 +80,6 @@ However, this functionality has undergone very limited testing, using only the "
 
 The following is a list of recommendations by our team for future capstone students looking to improve upon our work.
 
-- Screenshots can be included in a GitHub repository and embedded in README.md, simplifying the bot setup process
+- Screenshots can be included in a GitHub repository and embedded in README.md, simplifying the bot setup process.
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
 - Finish implementation of Docker support to provide a convenient and more portable alternative to normal setup.
