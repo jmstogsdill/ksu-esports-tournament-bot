@@ -19,17 +19,17 @@ Click the “Bot” tab on the left side of the page, then click “Reset Token�
 The page will give you a warning that any existing bot code containing a token will break if you do this; ignore that for now and click okay, then copy the string that appears. Your token should look something like this:
 MTI4ADEzNzU0NDg6MTR5ODU3MA.G7Chtm.BZJvZtXtZ3s01d8zoyxZzfCw67wjJ9gCiCFVdc
 
-Paste the bot token into your .env file.
+Paste the bot token into your `.env` file.
 
 # Obtaining the guild token
 
-Open the Discord client, and under the “Advanced” settings tab, make sure “Developer Mode” is switched on. This enables you to copy Discord user and guild (server) IDs. Right-click the icon of the server you want to use the bot in, then click “Copy Server ID”. Paste the result after “GUILD_TOKEN = “.
+Open the Discord client, and under the “Advanced” settings tab, make sure “Developer Mode” is switched on. This enables you to copy Discord user and guild (server) IDs. Right-click the icon of the server you want to use the bot in, then click “Copy Server ID”. Paste the result after `GUILD_TOKEN=` in `.env`.
 
 # Declare spreadsheet & database paths
 
 We have two template files - "PlayerStats.xlsx" and "main_db.db" - included in this repository. **If you are planning to make changes to the bot after use, make sure you change these files' names** or edit .gitignore, otherwise you may inadvertently upload files containing user data.
 
-Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So these two lines would look like this:
+Unless you want to move your spreadsheet and database files to another folder, you can simply use the relative paths for the template spreadsheet/database files we have included in the repository. So the relevant lines of `.env` would look like this:
 
 `SPREADSHEET_PATH=PlayerStats.xlsx`
 
