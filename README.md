@@ -46,7 +46,7 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 `pip3 install -r requirements.txt`
 
-*Note: if you want to run a containerized version of the bot using Docker, skip this step and see [our instructions for Docker setup](#running-the-bot-using-docker)* once you've populated the `.env` file with values and added the bot to your server.
+*Note: if you want to run a containerized version of the bot using Docker, skip this step and see [our instructions for Docker setup](#docker-support)* once you've populated the `.env` file with values and added the bot to your server.
 
 # Adding the Discord bot to your server
 
@@ -58,9 +58,11 @@ Selecting just the “Administrator” permission will prevent any permissions-r
 
 Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. Depending on your installation you may also be able to run it by simply double-clicking the bot.py file. If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client.
 
-# Running the bot using Docker
+# Docker Support
 
-**This section is a work-in-progress.** Our repository contains a functional Dockerfile, and once users with Docker with installed have followed all other steps (i.e. populated .env and added their bot to a server) they should be able to run a containerized version of the bot.
+***[Note: Docker support for this bot is largely untested and major functionality may be unusable at present.](#recommendations-for-further-development)***
+
+Our repository contains a functional Dockerfile, and once users with Docker with installed have followed all other steps (i.e. populated .env and added their bot to a server) they should be able to run a containerized version of the bot.
 
 This is done by running the following commands in a terminal, which create a Docker image and Docker image container:
 
@@ -68,11 +70,11 @@ This is done by running the following commands in a terminal, which create a Doc
 
 `docker run -d --name ksu-esports-bot-container --env-file .env ksu-esports-bot`
 
-However, this functionality has undergone extremely limited testing, only using the "Docker Desktop" (AMD64) application installed on a machine running Windows 10. Any functionality beyond running the bot and having it log in to Discord are untested, and extensive alterations may be required for the bot to function fully with Docker.
+However, this functionality has undergone very limited testing, using only the "Docker Desktop" (AMD64) application installed on a machine running Windows 10. Any functionality beyond running the bot and having it log in to Discord are untested, and extensive alterations may be required for the bot to function fully with Docker.
 
 
 
-# Recommendations for Futher Development
+# Recommendations for Further Development
 
 The following is a list of recommendations by our team for future capstone students looking to improve upon our work.
 
