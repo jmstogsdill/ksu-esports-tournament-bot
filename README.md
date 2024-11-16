@@ -31,7 +31,7 @@ MTI4ADEzNzU0NDg6MTR5ODU3MA.G7Chtm.BZJvZtXtZ3s01d8zoyxZzfCw67wjJ9gCiCFVdc
 
 Paste the bot token into your `.env` file.
 
-You also might need to enable the options under Privileged Gateway Intents under the Bot menu.
+You also might need to enable the options under Privileged Gateway Intents in the Bot menu.
 
 # Obtaining the guild token
 
