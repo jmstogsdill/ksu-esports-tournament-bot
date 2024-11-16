@@ -28,9 +28,10 @@ Click the “Bot” tab on the left side of the page, then click “Reset Token�
 The page will give you a warning that any existing bot code containing a token will break if you do this; ignore that for now and click okay, then copy the string that appears. Your token should look something like this:
 MTI4ADEzNzU0NDg6MTR5ODU3MA.G7Chtm.BZJvZtXtZ3s01d8zoyxZzfCw67wjJ9gCiCFVdc
 
-You also might need to enable the options under Privileged Gateway Intents under the Bot menu.
 
 Paste the bot token into your `.env` file.
+
+You also might need to enable the options under Privileged Gateway Intents under the Bot menu.
 
 # Obtaining the guild token
 
