@@ -28,10 +28,9 @@ Click the “Bot” tab on the left side of the page, then click “Reset Token�
 The page will give you a warning that any existing bot code containing a token will break if you do this; ignore that for now and click okay, then copy the string that appears. Your token should look something like this:
 MTI4ADEzNzU0NDg6MTR5ODU3MA.G7Chtm.BZJvZtXtZ3s01d8zoyxZzfCw67wjJ9gCiCFVdc
 
+While you're on this "Bot" page, you should also scroll down to "Privileged Gateway Intents" and **enable "Server Members Intent". The Server Members intent is used by the bot to access the usernames of members in your server. The other intents (Message Content and Presence) can be left disabled unless you are a developer and plan to add functionality that requires viewing users' online status, activities (i.e. games being played) or the content of messages that are not slash commands (which could be useful for moderation features).
 
-Paste the bot token into your `.env` file.
-
-You also might need to enable the options under Privileged Gateway Intents in the Bot menu.
+When that's done, paste the bot token you copied into your `.env` file.
 
 # Obtaining the guild token
 
