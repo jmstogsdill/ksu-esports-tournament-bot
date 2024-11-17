@@ -139,7 +139,7 @@ async def on_member_join(member):
     if welcome_channel:
         await welcome_channel.send(
             f"Welcome to the server, {member.mention}! 🎉\n"
-            "Please use `/link [riot_id]` to connect your Riot ID to the bot so you can participate in our in-house tournaments, and set your preferred roles with `/rolepreference` afterward. You can use /help for more information!"
+            "Please use `/link [riot_id]` to connect your Riot ID to the bot so you can participate in our in-house tournaments, and set your preferred roles with `/rolepreference` afterward. You can use `/help` for more information!"
         )
     else:
         print(f"Could not find a welcome channel for guild {member.guild.name}.")
