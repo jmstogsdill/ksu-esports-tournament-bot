@@ -118,7 +118,7 @@ When a new user joins the server, the bot will automatically @ them with a welco
 - **Potential for improvement:** This is one of only three commands/actions that calls the function to updates players' Discord display names in the database; the other two are `/checkin` and `/sitout` (to prevent players from joining matchmaking without up-to-date display names in the database, which would potentially cause confusion for admins). This is also the *only* command that calls the update_excel() function, and it only updates the Excel spreadsheet on a per-user basis. See our [recommendations for further development](#simple--short-term-improvements) for more information about this.
 
 
-## Matchmaking / Role Commands
+## Matchmaking & Role Commands 🎲
 
 ### /checkin
 
@@ -190,9 +190,9 @@ When a new user joins the server, the bot will automatically @ them with a welco
 - Only usable by the *owner* of the server the command is typed in. This will reset all players' "Participation," "Wins," "MVPs," "ToxicityPoints," "GamesPlayed," "WinRate" and "TotalPoints" in the database, while maintaining records of linked users' ranks, tiers and role preference.
 
 
-## Commands Subject to Change
+## Commands Subject to Change 🛠️
 
-### /votemvp
+### /votemvp [player]
 
 - Allows a user to initiate a 5-minute MVP voting period. Other players can vote on server members with the Player role to have that person's "MVPs" database value incremented. A tie (i.e. 2 MVPs) is possible provided a minimum number of users participates in the vote.
 - Updates are sent to the chat notifying users when 3 minutes, 2 minutes and 1 minute are left remaining.
