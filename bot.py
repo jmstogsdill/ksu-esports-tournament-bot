@@ -24,13 +24,21 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
+"""
+All of the following constants are variables which are set in the .env file, and several are crucial to the bot's functions.
+If you don't have an .env file in the same directory as bot.py, ensure you downloaded everything from the bot's GitHub repository and that you renamed ".env.template" to .env.
+"""
 
 TOKEN = os.getenv('BOT_TOKEN')#Gets the bot's password token from the .env file and sets it to TOKEN.
 GUILD = os.getenv('GUILD_TOKEN')#Gets the server's id from the .env file and sets it to GUILD.
+RIOT_API_KEY = os.getenv('RIOT_API_KEY')
+
 # Paths for spreadsheet and SQLite database on the bot host's device
 SPREADSHEET_PATH = os.path.abspath(os.getenv('SPREADSHEET_PATH'))
 DB_PATH = os.getenv('DB_PATH')
-RIOT_API_KEY = os.getenv('RIOT_API_KEY')
+
+WELCOME_CHANNEL_ID = os.getenv('WELCOME_CHANNEL_ID')
+
 TIER_WEIGHT = float(os.getenv('TIER_WEIGHT', 0.7))  # Default value of 0.7 if not specified in .env
 ROLE_PREFERENCE_WEIGHT = float(os.getenv('ROLE_PREFERENCE_WEIGHT', 0.3))  # Default value of 0.3 if not specified in .env
 TIER_GROUPS = os.getenv('TIER_GROUPS', 'UNRANKED,IRON,BRONZE,SILVER:GOLD,PLATINUM:EMERALD:DIAMOND:MASTER:GRANDMASTER:CHALLENGER') # Setting default tier configuration if left blank in .env
@@ -112,6 +120,29 @@ async def on_ready():
         new_position = max(bot_role.position - 1, 1)
         await player_role.edit(position=new_position)
         await volunteer_role.edit(position=new_position)
+        
+@client.event
+async def on_member_join(member):
+    # Determine which channel to use for the welcome message
+    welcome_channel = None
+
+    if WELCOME_CHANNEL_ID:
+        # If a welcome channel is specified in .env, use that channel
+        welcome_channel = member.guild.get_channel(int(WELCOME_CHANNEL_ID))
+    else:
+        # Otherwise, try to find the default channel named "general" (created automatically when a Discord server is made)
+        for channel in member.guild.text_channels:
+            if channel.name.lower() == "general":
+                welcome_channel = channel
+                break
+
+    if welcome_channel:
+        await welcome_channel.send(
+            f"Welcome to the server, {member.mention}! 🎉\n"
+            "Please use `/link [riot_id]` to connect your Riot ID to the bot so you can participate in our in-house tournaments, and set your preferred roles with `/rolepreference` afterward. You can use /help for more information!"
+        )
+    else:
+        print(f"Could not find a welcome channel for guild {member.guild.name}.")
         
 # Safe API call function with retries for better error handling
 async def safe_api_call(url, headers):
@@ -290,8 +321,9 @@ async def update_player_rank(conn, discord_id, encrypted_summoner_id):
 """
 Command to display stats for a given user which simultaneously syncs the user's stats from the database to a spreadsheet (specified in .env) for easy viewing.0
 This command pulls and displays some stats from the database, but also makes an API call through update_player_rank() to get the user's updated League of Legends rank.
-There is a known error where player rank may display as "N/A" on the command embed due to a connection issue, even if the API key is set up properly. However, typing the command a 1-2 more
-times resolves this.
+
+Note that the rank displayed in this command (and used for tier assignment i.e. matchmaking purposes) is solo/duo queue rank.
+
 """
 # Command to display stats for a given user
 @tree.command(
@@ -396,9 +428,6 @@ async def stats(interaction: discord.Interaction, player: discord.Member):
         await interaction.followup.send("An unexpected error occurred while fetching player stats.", ephemeral=True)
         
 
-# riot ID linking command, role preference command, and other code added by Jackson 10/18/2024 - may not interact with other code tied to matchmaking with ranks/tiers right now, so can be changed or removed later.
-# Dropdown menu for role preference selection
-
 # Riot ID linking command. This is the first command users should type before using other bot features, as it creates a record for them in the database.
 @tree.command(
     name='link',
@@ -437,29 +466,48 @@ async def link(interaction: discord.Interaction, riot_id: str):
                     print(f"Riot API response: {data}")
 
                     async with aiosqlite.connect(DB_PATH) as conn:
-                        # Check if the user already exists in the database
-                        async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
-                            result = await cursor.fetchone()
+                        try:
+                            # Check if the user already exists in the database
+                            async with conn.execute("SELECT * FROM PlayerStats WHERE DiscordID = ?", (str(member.id),)) as cursor:
+                                result = await cursor.fetchone()
 
-                        if result:
-                            # Update the existing record with the new Riot ID
-                            await conn.execute(
-                                "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
-                                (riot_id, str(member.id))
-                            )
-                        else:
-                            # Insert a new record if the user doesn't exist in the database
-                            await conn.execute(
-                                "INSERT INTO PlayerStats (DiscordID, DiscordUsername, PlayerRiotID) VALUES (?, ?, ?)",
-                                (str(member.id), member.display_name, riot_id)
-                            )
-                        
-                        await conn.commit()
+                            if result:
+                                # Update the existing record with the new Riot ID
+                                await conn.execute(
+                                    "UPDATE PlayerStats SET PlayerRiotID = ? WHERE DiscordID = ?",
+                                    (riot_id, str(member.id))
+                                )
+                            else:
+                                # Insert a new record if the user doesn't exist in the database
+                                await conn.execute(
+                                    "INSERT INTO PlayerStats (DiscordID, DiscordUsername, PlayerRiotID) VALUES (?, ?, ?)",
+                                    (str(member.id), member.display_name, riot_id)
+                                )
 
-                    await interaction.response.send_message(
-                        f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.",
-                        ephemeral=True
-                    )
+                            await conn.commit()
+
+                            await interaction.response.send_message(
+                                f"Your Riot ID '{riot_id}' has been successfully linked to your Discord account.",
+                                ephemeral=True
+                            )
+                        except aiosqlite.IntegrityError as e:
+                            # Handle UNIQUE constraint violation (i.e., Riot ID already linked)
+                            if 'UNIQUE constraint failed: PlayerStats.PlayerRiotID' in str(e):
+                                # Riot ID is already linked to another user
+                                async with conn.execute("""
+                                    SELECT DiscordID, DiscordUsername FROM PlayerStats WHERE PlayerRiotID = ?
+                                """, (riot_id,)) as cursor:
+                                    existing_user_data = await cursor.fetchone()
+
+                                if existing_user_data:
+                                    existing_user_id, existing_username = existing_user_data
+                                    await interaction.response.send_message(
+                                        f"Error: This Riot ID is already linked to another Discord user: <@{existing_user_id}>. "
+                                        "If this is a mistake, please contact an administrator.",
+                                        ephemeral=True
+                                    )
+                            else:
+                                raise e  # Reraise the error if it's not related to UNIQUE constraint
                 else:
                     # Riot ID does not exist or other error
                     error_msg = await response.text()
@@ -693,23 +741,6 @@ async def rolepreference(interaction: discord.Interaction):
 
 
 
-# code to calculate and update winrate in database
-async def update_win_rate(discord_id):
-    async with await get_db_connection() as conn:
-        async with conn.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (discord_id,)) as cursor:
-            result = await cursor.fetchone()
-    if result:
-        wins, games_played = result
-        win_rate = (wins / games_played) * 100 if games_played > 0 else 0
-        await conn.execute("UPDATE PlayerStats SET WinRate = ? WHERE DiscordID = ?", (win_rate, discord_id))
-        await conn.commit()
-
-
-
-
-# end of aforementioned code added by Jackson
-
-
 #Player class.
 class Player:
     def __init__(self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority):
@@ -864,7 +895,7 @@ class volunteerButtons(discord.ui.View):
         return "Did not check in yet"
 
     
-# Function to update Discord username in the database if it's been changed
+# Function to update Discord username in the database if it's been changed.
 async def update_username(player: discord.Member):
     try:
         async with aiosqlite.connect(DB_PATH) as conn:
@@ -973,7 +1004,20 @@ async def update_wins(winners):
                         "UPDATE PlayerStats SET Wins = ?, GamesPlayed = ? WHERE DiscordID = ?",
                         (wins + 1, games_played + 1, str(winner.id))
                     )
+                    # Update win rate for the player
+                    await update_win_rate(str(winner.id))
 
+        await conn.commit()
+        
+# code to calculate and update winrate in database
+async def update_win_rate(discord_id):
+    async with await get_db_connection() as conn:
+        async with conn.execute("SELECT Wins, GamesPlayed FROM PlayerStats WHERE DiscordID = ?", (discord_id,)) as cursor:
+            result = await cursor.fetchone()
+    if result:
+        wins, games_played = result
+        win_rate = (wins / games_played) * 100 if games_played > 0 else 0
+        await conn.execute("UPDATE PlayerStats SET WinRate = ? WHERE DiscordID = ?", (win_rate, discord_id))
         await conn.commit()
 
 #Command to start check-in
@@ -1032,19 +1076,24 @@ async def toxicity(interaction: discord.Interaction, member: discord.Member):
 @tree.command(
     name='win',
     description="Update the number of wins for each player on the winning team.",
-    guild=discord.Object(GUILD)
-)
+    guild = discord.Object(GUILD))
 @commands.has_permissions(administrator=True)
+@app_commands.describe(match_number="Choose the match number (1, 2, or 3).",
+                       lobby_number="Specify the lobby number.",
+                       team="Choose the winning team (red or blue).")
+@app_commands.choices(
+    match_number=[
+        app_commands.Choice(name="1", value="1"),
+        app_commands.Choice(name="2", value="2"),
+        app_commands.Choice(name="3", value="3")
+    ],
+    team=[
+        app_commands.Choice(name="Red", value="red"),
+        app_commands.Choice(name="Blue", value="blue")
+    ]
+)
 async def win(interaction: discord.Interaction, match_number: str, lobby_number: str, team: str):
     try:
-        # Check if the team is either "red" or "blue"
-        if team.lower() not in ['red', 'blue']:
-            await interaction.response.send_message(
-                "Error: Please specify a valid team name (`red` or `blue`).",
-                ephemeral=True
-            )
-            return
-
         # Ensure that the match and lobby exist by checking against the matchmaking result
         match_key = f"match_{match_number}_lobby_{lobby_number}"
         if match_key not in active_matches:
@@ -1060,16 +1109,22 @@ async def win(interaction: discord.Interaction, match_number: str, lobby_number:
         # Update wins for each player on the winning team
         await interaction.response.defer(ephemeral=True)
 
+         # This part of the command's code checking for unfound users should basically never be necessary anymore because it was added at a time when this command asked an admin to
+         # specify 5 usernames. However, it's being kept here for error handling in case a team is somehow created with users who are not in the database during /matchmaking testing.
         not_found_users = await check_winners_in_db(winning_team)
 
         if not_found_users:
             missing_users = ", ".join([user.username for user in not_found_users])
             await interaction.followup.send(
-                f"The following players could not be found in the database, so no wins were updated: \n{missing_users}"
+                f"Data integrity error; the following players could not be found in the database, so no wins were updated: \n{missing_users}",
+                ephemeral=True
             )
         else:
             await update_wins(winning_team)
-            await interaction.followup.send("All winners' 'win' points have been updated.")
+            await interaction.followup.send(
+                "All players on the winning team have had their 'Wins' updated.",
+                ephemeral=True
+            )
 
     except commands.MissingPermissions:
         await interaction.response.send_message(
@@ -1092,6 +1147,7 @@ async def win(interaction: discord.Interaction, match_number: str, lobby_number:
     description='Remove all users from Player and Volunteer roles.',
     guild=discord.Object(GUILD)
 )
+@commands.has_permissions(administrator=True)
 async def remove(interaction: discord.Interaction):
     try:
         player = get(interaction.guild.roles, name='Player')
@@ -1129,7 +1185,7 @@ async def remove(interaction: discord.Interaction):
     except Exception as e:
         print(f'An error occurred: {e}')
         await interaction.followup.send("An unexpected error occurred while removing roles from users.", ephemeral=True)
-
+        
 #Slash command to find and count all of the players and volunteers
 @tree.command(
         name='players',
@@ -1440,8 +1496,13 @@ def group_players_by_rank(players):
     return tier_groups
 
 
-
-# code for MVP voting command/functions added by Jackson -- updated morning of 10/18/2024
+"""
+The following is code for MVP voting command/functions. This is out of date and inconsistent with the desired specifications for the bot,
+as it does not provide for multiple "voting pools" which would be needed in the case of matchmaking with multiple lobbies. The "MVP voting"
+commands could be removed entirely and combined with the /win command somehow so a voting period is automatically initiated as soon as an
+administrator declares the conclusion of a lobby's match, with buttons displaying players' usernames on both the winning and losing teams.
+This is all also addressed in README.md.
+"""
 # Dict that tracks votes after someone initiates an MVP voting session with /votemvp
 votes = defaultdict(int)
 has_voted = set()  # Tracks players who've already voted
@@ -1669,13 +1730,13 @@ async def help_command(interaction: discord.Interaction):
             value="Initiate tournament check-in.",
             inline=False
         ).add_field(
-            name="sitout",
+            name="/sitout",
             value="Volunteer to sit out of the current match..",
             inline=False
         ),
         discord.Embed(
             title="Help Menu 📚",
-            description="**/wins [player_1] [player_2] [player_3] [player_4] [player_5]** - Add a win for the specified players.",
+            description="**/win [match_number] [lobby_number] [team]** - Add a win for the specified players.",
             color=0xffc629
         ),
         discord.Embed(
