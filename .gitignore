@@ -11,6 +11,7 @@ ksu_esports_bot.db
 *.xlsx
 *.txt
 
-# Exceptions for template files
+# Exceptions for template and dependency files
 !PlayerStats.xlsx
 !main_db.db
+!requirements.txt
