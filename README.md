@@ -50,7 +50,7 @@ Unless you want to move your spreadsheet and database files to another folder or
 > 
 > DB_PATH=main_db.db
 
-## Setting up Riot API key
+## Setting up Riot Games API key
 
 Visit https://developer.riotgames.com/app-type, make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key.
 
@@ -69,7 +69,7 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 ## Adding the Discord bot to your server
 
-Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Manage Roles” under General Permissions. Note that the permissions required by the bot are likely to change in future versions, and this may need to be revised.
+Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Manage Roles” under General Permissions. Note that the permissions required by the bot are likely to change in future versions, and this may need to be revised.
 
 Selecting just the “Administrator” permission will prevent any permissions-related issues from occurring with the bot, though granting this permission is generally not considered best practice. Below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
 
