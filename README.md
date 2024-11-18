@@ -23,7 +23,7 @@ We will be filling this `.env` file with several values to allow the Discord bot
 
 ## Generating the Discord bot token
 
-Open the Discord Developer Portal: https://discord.com/developers/applications
+Open the [Discord Developer Portal](https://discord.com/developers/applications).
 
 After signing in, create a new application, name it whatever you'd like and agree to the terms of service.
 
