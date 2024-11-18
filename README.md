@@ -15,7 +15,11 @@ This is a Discord bot for organizing and managing tournaments within the Kennesa
 
 ## How to set up the Discord bot
 
-After you've downloaded the contents of this GitHub repository, locate the `.env.template` file and rename it to just `.env`. We will be filling this `.env` file with several values to allow the Discord bot to function.
+After you've downloaded the contents of this GitHub repository, locate the `.env.template` file and rename it to just `.env`.
+
+**Note:** If you are using Windows and do not have "File name extensions" turned on in File Explorer's "View" tab, you will need to turn it on to rename the file properly. If you are renaming the file correctly you will get a warning telling you that the file might become unusable if you change its extension.
+
+We will be filling this `.env` file with several values to allow the Discord bot to function.
 
 ## Generating the Discord bot token
 
@@ -30,7 +34,7 @@ MTI4ADEzNzU0NDg6MTR5ODU3MA.G7Chtm.BZJvZtXtZ3s01d8zoyxZzfCw67wjJ9gCiCFVdc
 
 While you're on this "Bot" page, you should also scroll down to "Privileged Gateway Intents" and **enable "Server Members Intent"**. The Server Members intent is used by the bot to access the usernames of members in your server and @ them when they join so they use /link. The other intents (Message Content and Presence) can be left disabled unless you are a developer and plan to add functionality that requires viewing users' online status, activities (i.e. games being played) or the content of messages that are not slash commands (which could be useful for moderation features).
 
-When that's done, paste the bot token you copied into your `.env` file.
+When that's done, paste the bot token you copied into your `.env` file. There should be no spaces between variables and equal signs anywhere in the file.
 
 ## Obtaining the guild token
 
