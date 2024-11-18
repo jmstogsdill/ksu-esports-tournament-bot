@@ -52,7 +52,7 @@ Unless you want to move your spreadsheet and database files to another folder or
 
 ## Setting up Riot Games API key
 
-Visit https://developer.riotgames.com/app-type, make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key.
+Visit [the Riot Games developer portal](https://developer.riotgames.com/app-type), make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key.
 
 When you click your username in the top-right corner, click "Apps" in the dropdown, and you should see your app listed somewhere in the dark column on the left side of the screen. Select this, and you will see a "General Info" section containing the status of your registration and (if it's approved) an API key beginning with "RGAPI". Copy this into the line of .env with `RIOT_API_KEY`.
 
@@ -69,13 +69,19 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 ## Adding the Discord bot to your server
 
-Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Administrator” under General Permissions. Then, below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
+Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Administrator” under General Permissions.
 
-**Note for developers only**: granting this "Administrator" permission is generally not considered best practice in bot development. [In the future,](#simple-short-term-improvements) it should be changed to just the specific permissions the bot actually needs.
+Then, below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
+
+**Note for developers only**: granting this "Administrator" permission is generally not considered best practice in bot development. [In the future,](#simple--short-term-improvements) it should be changed to just the specific permissions the bot actually needs.
 
 ## Running the bot
 
-Open a command prompt window in the same directory as bot.py, and type either `python bot.py`, `python3 bot.py`, or simply `bot.py` (depending on your Python installation) to run the bot. Depending on your installation you may also be able to run it by simply double-clicking the bot.py file. If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client. [Jump to our user guide for more information.](#user-guide--command-reference)
+Double-click the `bot.py` file to run it.
+
+Depending on your Python installation, you may have to instead open a command prompt window in the same directory as bot.py, and type either  `python bot.py`, `python3 bot.py`, or simply `bot.py`.
+
+If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client. [Jump to our user guide for more information.](#user-guide--command-reference)
 
 ## Docker Support
 
