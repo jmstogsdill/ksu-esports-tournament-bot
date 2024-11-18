@@ -69,9 +69,9 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 ## Adding the Discord bot to your server
 
-Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Manage Roles” under General Permissions. Note that the permissions required by the bot are likely to change in future versions, and this may need to be revised.
+Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Administrator” under General Permissions. Then, below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
 
-Selecting just the “Administrator” permission will prevent any permissions-related issues from occurring with the bot, though granting this permission is generally not considered best practice. Below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
+**Note for developers only**: granting this "Administrator" permission is generally not considered best practice in bot development. [In the future,](#simple-short-term-improvements) it should be changed to just the specific permissions the bot actually needs.
 
 ## Running the bot
 
