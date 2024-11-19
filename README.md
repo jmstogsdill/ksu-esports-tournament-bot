@@ -236,7 +236,7 @@ The following is a list of recommendations by our team for future capstone stude
 
 - Rework / finish implementation of MVP voting to allow for multiple voting pools, as the current matchmaking implementation provides for creation of multiple lobbies with concurrently-running matches. In other words, users with the "Player" and "Volunteer" from different lobbies should each be able to vote for MVPs only within their own lobby. A possible solution for this is tying MVP voting directly to the `/win` command, but there should also be functionality for users to vote for an "ace" (MVP on the losing team). Two rows of buttons could pop up with players' usernames, one row showing winning team voting options and one row showing losing team members as voting options.
 
-- `/points` currently increases "Participation" value in the database for all users that currently have the "Player" and "Volunteer" roles, and is intended to be typed once a match has completed. However, this functionality could be merged into an improved version of `/win` that along with MVP voting.
+- `/points` currently increases "Participation" value in the database for all users that currently have the "Player" and "Volunteer" roles, and is intended to be typed once a match has completed. However, this functionality could be merged into an improved version of `/win` along with MVP voting.
 
 ### Simple / Short-term Improvements
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
