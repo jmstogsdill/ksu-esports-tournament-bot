@@ -83,6 +83,14 @@ Depending on your Python installation, you may have to instead open a command pr
 
 If successful, after (at most) a minute you will see a terminal output that says “Logged in as [your bot’s name],” and you’ll see that the bot account you added to your server is online in your Discord client. [Jump to our user guide for more information.](#user-guide--command-reference)
 
+
+
+**Troubleshooting note:** Some users may experience the following connection-related error using `/link` and `/stats`:
+
+> An error occurred while connecting to the Riot API: Cannot connect to host americas.api.riotgames.com:443 ssl:default [getaddrinfo failed]
+
+If you experience this, a quick fix on Windows is to go to `Control Panel\Network and Internet\Network and Sharing Center`, click "Change adapter settings", right-click your Wi-Fi connection and select Properties. Then, click "Internet Protocol Version 4 (TCP/IPv4)", select "Properties", toggle "Use the following DNS server addresses" and enter 8.8.8.8 and 8.8.4.4 for your preferred/alternate DNS servers. These are Google's public DNS servers, and using them should resolve the "getaddrinfo failed" issue.
+
 ## Docker Support
 
 *[Note: Docker support for this bot is largely untested and major functionality may be unusable at present.](#recommendations-for-further-development)*
