@@ -241,9 +241,13 @@ The following is a list of recommendations by our team for future capstone stude
 ### Simple / Short-term Improvements
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
 
-- Screenshots can be included in a GitHub repository subfolder and embedded in README.md, simplifying the bot setup process.
+- Screenshots and/or gifs can be included in a GitHub repository subfolder and embedded in README.md, simplifying the bot setup process.
 
-- /stats embed UI could be improved to display a user's full ranking information (for example, GOLD II instead of just GOLD). This change would necessitate documentation specifying that different tiers within ranks do not affect matchmaking, however.
+- Add admin-only command (or option in config file) to blacklist certain players from being matched into the same team.
+
+- `/stats` embed UI could be improved to display a user's full ranking information (for example, GOLD II instead of just GOLD). This change would necessitate documentation specifying that different tiers within ranks do not affect matchmaking, however. `/stats` could also display rank for both ranked solo/duo (which it does now) and flex queue
+
+- The bot and database could be updated to retrieve flex queue ranks, and store those in an additional table column. These could be used to calculate tier as a fallback for the edge case in which a player is "unranked" in solo/duo for a given season
 
 - A possible UX improvement is combining /checkin and /sitout (formerly /volunteer) into a single command with 3 buttons.
 
