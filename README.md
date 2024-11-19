@@ -8,9 +8,9 @@ This is a Discord bot for organizing and managing tournaments within the Kennesa
 
 **[Setup/Installation](#how-to-set-up-the-discord-bot)**
 
-**[Recommendations for Future Development](#recommendations-for-further-development)**
+**[User Guide](#user-guide--command-reference)**
 
-**[User Guide](#user-guide)**
+**[Recommendations for Future Development](#recommendations-for-further-development)**
 
 
 ## How to set up the Discord bot
@@ -52,14 +52,14 @@ Unless you want to move your spreadsheet and database files to another folder or
 
 ## Setting up Riot Games API key
 
-Visit [the Riot Games developer portal](https://developer.riotgames.com/app-type), make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key.
+Visit [the Riot Games developer portal](https://developer.riotgames.com/), make an account, and click "Register Product" under "Personal API Key". Agree to the terms of service, give a name and brief description of what you're using the key for (a Discord bot performing League tournament administration tasks), then submit the request for your key.
 
 When you click your username in the top-right corner, click "Apps" in the dropdown, and you should see your app listed somewhere in the dark column on the left side of the screen. Select this, and you will see a "General Info" section containing the status of your registration and (if it's approved) an API key beginning with "RGAPI". Copy this into the line of .env with `RIOT_API_KEY`.
 
 In our experience, getting the app approved and receiving the key was extremely fast (it seemingly took just a few minutes) but it's possible that this process could last for a day or longer. If that is the case for you and you need a temporary API key, return to the main Riot developer dashboard page, and you can see a "Development API Key" which will expire every 24 hours.
 
 ## Installation of dependencies
-To finish setting up the bot, ensure you have at least Python version 3.12.6 installed on the machine that will be hosting it, and run the following command in the same directory as the bot's files (including bot.py and requirements.txt).
+To finish setting up the bot, ensure you have at least **Python version 3.12.6** installed on the machine that will be hosting it, and run the following command in the same directory as the bot's files (including bot.py and requirements.txt).
 
 > pip3 install -r requirements.txt
 
@@ -71,7 +71,7 @@ To finish setting up the bot, ensure you have at least Python version 3.12.6 ins
 
 Return to the Discord developer portal link from the section where we generated a bot token, and under the “OAuth2” menu, select the “applications.commands” and “bot” scopes. Scrolling down to “Bot Permissions,” select “Administrator” under General Permissions.
 
-Then, below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server.
+Then, below the scopes/bot permissions checklists, select “Guild Install,” and open the URL at the bottom of the menu in a new tab. This will display a prompt allowing you to add the Discord bot account to your server. **Once it has been added, go in your server's Roles settings and ensure that the bot's role (named the same as the app you created on the Discord dev portal) is above the Player and Volunter roles.**
 
 **Note for developers only**: granting this "Administrator" permission is generally not considered best practice in bot development. [In the future,](#simple--short-term-improvements) it should be changed to just the specific permissions the bot actually needs.
 
@@ -114,7 +114,7 @@ When a new user joins the server, the bot will automatically @ them with a welco
 
 - Links a user's Riot ID to their Discord account.
 - All new members joining the bot's server will be welcomed and prompted to type this command through the on_member_join() function. It takes in a user's Riot ID (e.g. username#1234 or username#NA1) and checks whether it exists using the Riot Games API if a key has been specified in `.env`. The user's Riot ID is then stored in the database alongside the numeric Discord ID and username (technically, display name) of the person who typed the command.
-- This command has error handling so if a user enters an invalid ID or an ID that someone else has already stored in the database, they will receive messages telling them about it. In the latter case, the bot will send the username of the person who has previously linked the given Riot ID (in clickable @Username format) and tell the user typing the command to notify an admin if a mistake was made. This situation is where [/unlink](#unlink) comes in handy.
+- This command has error handling so if a user enters an invalid ID or an ID that someone else has already stored in the database, they will receive messages telling them about it. In the latter case, the bot will send the username of the person who has previously linked the given Riot ID (in clickable @Username format) and tell the user typing the command to notify an admin if a mistake was made. This situation is where [/unlink](#unlink-player-️) comes in handy.
 
 ### /rolepreference
 
@@ -237,8 +237,8 @@ The following is a list of recommendations by our team for future capstone stude
 - `/points` currently increases "Participation" value in the database for all users that currently have the "Player" and "Volunteer" roles, and is intended to be typed once a match has completed. However, this functionality could be merged into an improved version of `/win` that along with MVP voting.
 
 ### Simple / Short-term Improvements
-- Screenshots can be included in a GitHub repository subfolder and embedded in README.md, simplifying the bot setup process.
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
+- Screenshots can be included in a GitHub repository subfolder and embedded in README.md, simplifying the bot setup process.
 - /stats embed UI could be improved to display a user's full ranking information (for example, GOLD II instead of just GOLD). This change would necessitate documentation specifying that different tiers within ranks do not affect matchmaking, however.
 - A possible UX improvement is combining /checkin and /sitout (formerly /volunteer) into a single command with 3 buttons.
 - When `/resetdb` is entered twice within 10 seconds (i.e. successfully performing a reset), the initial confirmation message is erroneously sent a second time along with the message announcing a successful reset. The 10-second expiration message is also sent afterward, despite the reset already being carried out. This command could also be reworked to remove the need for an import of the "datetime" library.
