@@ -233,21 +233,32 @@ The following is a list of recommendations by our team for future capstone stude
 
 ### Highest Priority Fixes / Changes
 - In the current version of the bot, the `/matchmake` command is non-functional, as tiers are not being correctly stored/retrieved from the database despite their assignment through `.env`. This should be the number one priority for any future development on this version of the bot.
+
 - Rework / finish implementation of MVP voting to allow for multiple voting pools, as the current matchmaking implementation provides for creation of multiple lobbies with concurrently-running matches. In other words, users with the "Player" and "Volunteer" from different lobbies should each be able to vote for MVPs only within their own lobby. A possible solution for this is tying MVP voting directly to the `/win` command, but there should also be functionality for users to vote for an "ace" (MVP on the losing team). Two rows of buttons could pop up with players' usernames, one row showing winning team voting options and one row showing losing team members as voting options.
+
 - `/points` currently increases "Participation" value in the database for all users that currently have the "Player" and "Volunteer" roles, and is intended to be typed once a match has completed. However, this functionality could be merged into an improved version of `/win` that along with MVP voting.
 
 ### Simple / Short-term Improvements
 - When creating the bot application, specify just the bot permissions that are actually needed instead of using "Administrator", as this is not considered best practice.
+
 - Screenshots can be included in a GitHub repository subfolder and embedded in README.md, simplifying the bot setup process.
+
 - /stats embed UI could be improved to display a user's full ranking information (for example, GOLD II instead of just GOLD). This change would necessitate documentation specifying that different tiers within ranks do not affect matchmaking, however.
+
 - A possible UX improvement is combining /checkin and /sitout (formerly /volunteer) into a single command with 3 buttons.
+
 - When `/resetdb` is entered twice within 10 seconds (i.e. successfully performing a reset), the initial confirmation message is erroneously sent a second time along with the message announcing a successful reset. The 10-second expiration message is also sent afterward, despite the reset already being carried out. This command could also be reworked to remove the need for an import of the "datetime" library.
+
 - All commands except for `/help` are supposed to be disabled for users who haven't used `/link`, and other commands which alter the database are intended to be admin-only. However, more testing should be done to ensure that this is the case. Currently `/rolepreference` is completely impossible for unlinked users to enter so it at least is working perfectly.
+
 - Currently, Discord usernames (technically regarded by Discord as "display names" not usernames) are stored by the bot's database and corresponding Excel sheet just so users are more recognizable to admins. The bot has a function `update_username()` which is called when someone types `/stats` for a user, and also whenever a user presses a button to check in or sit out from a matchmaking lobby. These calls effectively prevent someone from joining matchmaking while their username in the DB is out-of-date, but there should still be a function to check for username updates on a timed basis without players needing to use commands first.
+
 - Similarly, the function to update the Excel sheet `update_excel()` is only called for a player when `/stats` is used on them, meaning it only gets updated 1 player at a time. This isn't crucial as this spreadsheet is not used by the bot's backend in any way, but for anyone wanting to view all player data without a way of opening the database it is highly problematic as /stats would need to be typed for every player, every time one of their statistics is updated to keep the sheet perfectly up to date. We recommend implementing functionality to update the sheet on a timed basis, i.e. once per hour.
+
 - The bot could automatically create a channel (e.g. #registration) if it does not already exist, and use Discord's "modal" functionality to show users a form having them enter/update both their Riot ID and role preferences simultaneously.
 
 
 ### Long-term / Complex Development Goals
 - Most, if not all, of the bot's commands currently have a `guild` parameter set to `discord.Object(GUILD)` (i.e the guild token users paste into `.env`). This restricts the bot's functions to the single server that has an ID in your `.env` file. A future capstone team could conceivably alter the code to handle multiple, comma-separated guild IDs in `.env`, but a better solution would be to allow *global* commands by removing the guild parameters along with the `GUILD_TOKEN` in .env. The reason we don't do this now is because "global" slash (/) commands can take up to an hour to appear across the various servers that a bot is added to, and this is problematic for testing purposes. We only recommend making a command global if a future team improves it to an ideal state after which it needs no significant testing/improvement. The `GUILD_TOKEN` field in `.env` could also be used as an optional field for developers to specify a testing server, so unstable ones can be restricted to it, while other, stable ones can be left global (i.e for use in the KSU League of Legends / TFT server).
+
 - Finish implementation of Docker support to provide a convenient and more portable alternative to normal setup.
