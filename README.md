@@ -2,7 +2,7 @@
 
 A Discord bot for management of League of Legends in-house games / tournaments.
 
-This project was developed by a team of Kennesaw State University IT Capstone students during the fall 2024 semester, and builds upon [a preexisting bot](https://github.com/llamasol/Team-S24-07-Discord-Tournament-T1/tree/main) created by a capstone team during the spring 2024 semester.
+This bot was developed by a team of Kennesaw State University students for their fall 2024 IT Capstone project. It builds upon [a preexisting bot](https://github.com/llamasol/Team-S24-07-Discord-Tournament-T1/tree/main) created by a capstone team during the spring 2024 semester.
 
 ## Contents
 
