@@ -1,8 +1,8 @@
-# Team-F24-17-Discord-Tournament-T2
+# KSU eSports Tournament Bot
 
-KSU IT Capstone Fall 2024 - Project 17 - KSU Esports Tournament Bot (Team 2)
+A Discord bot for management of League of Legends in-house games / tournaments.
 
-This is a Discord bot for organizing and managing tournaments within the Kennesaw State University League of Legends Discord server. It builds off of a preexisting bot created by a capstone team during the spring 2024 semester.
+This project was developed by a team of Kennesaw State University IT Capstone students during the fall 2024 semester, and builds upon [a preexisting bot](https://github.com/llamasol/Team-S24-07-Discord-Tournament-T1/tree/main) created by a capstone team during the spring 2024 semester.
 
 ## Contents
 
